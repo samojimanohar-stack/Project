@@ -1,0 +1,123 @@
+{
+  "model_name": "fraud_risk_forecaster",
+  "model_version": "1.0.0",
+  "created_at": "2026-02-05",
+  "target": "is_fraud",
+  "features": {
+    "numerical": [
+      "amount",
+      "account_age_days",
+      "user_age",
+      "average_transaction_amount",
+      "historical_fraud_count",
+      "transactions_last_1h",
+      "transactions_last_24h",
+      "amount_last_24h",
+      "unique_merchants_last_24h",
+      "unique_countries_last_7d",
+      "country_risk_score",
+      "merchant_risk_score",
+      "device_risk_score",
+      "ip_reputation_score",
+      "hour_of_day",
+      "day_of_week"
+    ],
+    "binary": [
+      "kyc_verified",
+      "proxy_vpn_flag",
+      "blacklist_match_flag",
+      "billing_shipping_mismatch",
+      "country_mismatch",
+      "new_device_for_user",
+      "new_location_for_user",
+      "is_weekend",
+      "is_holiday"
+    ],
+    "categorical_low_cardinality": [
+      "currency",
+      "transaction_type",
+      "channel",
+      "country",
+      "city"
+    ],
+    "categorical_high_cardinality": [
+      "merchant_id",
+      "device_id",
+      "browser_fingerprint"
+    ]
+  },
+  "encoders": {
+    "one_hot": {
+      "currency": ["USD", "EUR", "INR"],
+      "transaction_type": ["POS", "ONLINE", "TRANSFER"],
+      "channel": ["WEB", "MOBILE", "ATM"],
+      "country": ["US", "IN"],
+      "city": ["New York", "Mumbai"]
+    },
+    "label_encoding": {
+      "merchant_id": "label_encoder",
+      "device_id": "label_encoder",
+      "browser_fingerprint": "label_encoder"
+    }
+  },
+  "scaling": {
+    "method": "standard_scaler"
+  },
+  "missing_value_strategy": {
+    "numerical": "median",
+    "categorical": "unknown",
+    "binary": 0
+  },
+  "outlier_handling": {
+    "method": "percentile_clipping",
+    "lower_percentile": 1,
+    "upper_percentile": 99
+  },
+  "class_balance": {
+    "method": "SMOTE",
+    "enabled": true
+  },
+  "feature_order": [
+    "amount",
+    "currency_USD",
+    "currency_EUR",
+    "currency_INR",
+    "transaction_type_POS",
+    "transaction_type_ONLINE",
+    "transaction_type_TRANSFER",
+    "channel_WEB",
+    "channel_MOBILE",
+    "channel_ATM",
+    "country_US",
+    "country_IN",
+    "city_New York",
+    "city_Mumbai",
+    "account_age_days",
+    "user_age",
+    "kyc_verified",
+    "average_transaction_amount",
+    "historical_fraud_count",
+    "transactions_last_1h",
+    "transactions_last_24h",
+    "amount_last_24h",
+    "unique_merchants_last_24h",
+    "unique_countries_last_7d",
+    "merchant_id",
+    "device_id",
+    "browser_fingerprint",
+    "proxy_vpn_flag",
+    "country_risk_score",
+    "merchant_risk_score",
+    "device_risk_score",
+    "ip_reputation_score",
+    "blacklist_match_flag",
+    "hour_of_day",
+    "day_of_week",
+    "is_weekend",
+    "is_holiday",
+    "billing_shipping_mismatch",
+    "country_mismatch",
+    "new_device_for_user",
+    "new_location_for_user"
+  ]
+}

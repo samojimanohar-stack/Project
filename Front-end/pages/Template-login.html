@@ -1,0 +1,38 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template-auth.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <section class="hero">
+        <span class="badge">Secure Access</span>
+        <h1>Welcome back to your risk command center.</h1>
+        <p>Review flagged activity, update case outcomes, and keep teams aligned.</p>
+      </section>
+      <section class="panel">
+        <h2>Sign in</h2>
+        <p>Enter your credentials to continue.</p>
+        <form class="form" id="login-form">
+          <label class="field">
+            Work email
+            <input type="email" name="email" required placeholder="analyst@firm.com" />
+          </label>
+          <label class="field">
+            Password
+            <input type="password" name="password" required placeholder="Your password" />
+          </label>
+          <button class="btn btn-primary" type="submit">Sign in</button>
+          <p class="helper" id="login-status">Use your secure workspace credentials.</p>
+          <p class="footer">
+            New here? <a class="link" href="Template-signup.html">Create account</a>
+          </p>
+        </form>
+      </section>
+    </div>
+    <script src="js/Template-auth.js"></script>
+  </body>
+</html>

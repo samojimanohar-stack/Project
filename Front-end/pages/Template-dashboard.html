@@ -1,0 +1,58 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Risk Dashboard | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Risk Dashboard</h1>
+          <p class="helper">Monitor and score market transactions.</p>
+        </div>
+        <a class="btn btn-ghost" href="Template-index.html">Home</a>
+      </header>
+      <section class="grid">
+        <div class="panel">
+          <h2>Score a transaction</h2>
+          <form class="form" id="predict-form">
+            <label class="field">
+              Amount
+              <input type="number" name="amount" step="0.01" required placeholder="10000" />
+            </label>
+            <label class="field">
+              Country
+              <input type="text" name="country" placeholder="US" />
+            </label>
+            <label class="field">
+              Merchant risk score
+              <input type="number" name="merchant_risk_score" step="0.01" placeholder="0.2" />
+            </label>
+            <label class="field">
+              Transactions last 1h
+              <input type="number" name="transactions_last_1h" step="1" placeholder="3" />
+            </label>
+            <button class="btn btn-primary" type="submit">Score</button>
+          </form>
+          <p class="helper" id="predict-status">Awaiting input.</p>
+          <p class="result" id="predict-output">Risk: --</p>
+        </div>
+        <div class="panel">
+          <h2>What happens next?</h2>
+          <p>
+            Review transactions flagged as high risk and record investigator outcomes.
+          </p>
+          <ul class="list">
+            <li>Verify identity and payment history.</li>
+            <li>Request supporting documentation.</li>
+            <li>Escalate to compliance if needed.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+    <script src="js/Template.js"></script>
+  </body>
+</html>

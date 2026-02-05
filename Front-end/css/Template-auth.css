@@ -1,0 +1,116 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=DM+Sans:wght@400;500;700&display=swap");
+
+:root {
+  --ink: #0c111c;
+  --slate: #4a566e;
+  --mist: #e7ebf3;
+  --sea: #1b6cff;
+  --sea-deep: #0a3aa8;
+  --panel: #ffffff;
+  --shadow: 0 24px 60px rgba(12, 18, 29, 0.14);
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: "DM Sans", system-ui, sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at top, #f6f8ff 0%, #eef2f8 40%, #e2e8f5 100%);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  min-height: 100vh;
+}
+.hero {
+  padding: 64px;
+  display: grid;
+  align-content: center;
+  gap: 24px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(27, 108, 255, 0.12);
+  color: var(--sea-deep);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  width: fit-content;
+}
+.card-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.mini-card {
+  background: var(--panel);
+  padding: 16px 18px;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.panel {
+  background: var(--panel);
+  margin: 64px;
+  padding: 40px;
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+.form {
+  display: grid;
+  gap: 16px;
+}
+.field {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--slate);
+}
+input {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #d7ddea;
+  font-size: 15px;
+}
+.btn {
+  border: none;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--sea);
+  color: white;
+}
+.link {
+  color: var(--sea-deep);
+  text-decoration: none;
+  font-weight: 600;
+}
+.helper {
+  color: var(--slate);
+  font-size: 13px;
+}
+.footer {
+  font-size: 14px;
+}
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .hero,
+  .panel {
+    margin: 32px;
+    padding: 28px;
+  }
+}
+
