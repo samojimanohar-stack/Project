@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Verification | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template-auth.css" />
+  </head>
+  <body>
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
+    <div class="layout">
+      <section class="hero">
+        <span class="badge">Account Security</span>
+        <h1>Email verification</h1>
+        <p>Confirming your email helps protect your workspace.</p>
+      </section>
+      <section class="panel">
+        <h2 id="verify-title">Checking link...</h2>
+        <p class="helper" id="verify-message">Please wait.</p>
+        <p class="footer">
+          <a class="link" href="/login">Back to sign in</a>
+        </p>
+      </section>
+    </div>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get("status");
+      const title = document.getElementById("verify-title");
+      const message = document.getElementById("verify-message");
+      if (status === "success") {
+        title.textContent = "Email verified";
+        message.textContent = "You can now sign in to your workspace.";
+      } else if (status === "expired") {
+        title.textContent = "Verification expired";
+        message.textContent = "Request a new verification link and try again.";
+      } else {
+        title.textContent = "Invalid verification link";
+        message.textContent = "Request a new verification link and try again.";
+      }
+    </script>
+  </body>
+</html>

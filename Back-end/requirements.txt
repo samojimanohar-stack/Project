@@ -4,3 +4,4 @@ PyPDF2>=3.0
 shap>=0.45
 gunicorn>=21.2
 psycopg[binary]>=3.1
+python-dotenv>=1.0

@@ -6,8 +6,10 @@
   --mist: #e7ebf3;
   --sea: #1b6cff;
   --sea-deep: #0a3aa8;
-  --panel: #ffffff;
+  --panel: rgba(10, 15, 24, 0.9);
   --shadow: 0 24px 60px rgba(12, 18, 29, 0.14);
+  --radius-lg: 18px;
+  --radius-md: 14px;
 }
 * {
   box-sizing: border-box;
@@ -17,21 +19,67 @@
 body {
   font-family: "DM Sans", system-ui, sans-serif;
   color: var(--ink);
-  background: radial-gradient(circle at top, #f6f8ff 0%, #eef2f8 40%, #e2e8f5 100%);
+  background-color: #0a0f18;
+  background-image: radial-gradient(circle at top, rgba(35, 54, 96, 0.4) 0%, rgba(10, 15, 24, 0.95) 55%, rgba(7, 10, 18, 1) 100%),
+    linear-gradient(rgba(9, 14, 22, 0.75), rgba(9, 14, 22, 0.65)),
+    url("../image/20260205_1536_image.png");
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: cover, cover, 560px auto;
+  background-position: center, center, right 8% top 12%;
   min-height: 100vh;
   font-size: 15px;
   line-height: 1.6;
+  position: relative;
+  overflow-x: hidden;
 }
+
+.layout {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.panel,
+.hero {
+  width: 100%;
+}
+
+.bg-motion {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.bg-motion video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(2) brightness(1.2) contrast(1.05);
+}
+
+.bg-motion-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(238, 242, 248, 0.75), rgba(238, 242, 248, 0.6));
+  mix-blend-mode: screen;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 .hero {
-  padding: 64px;
+  padding: clamp(24px, 5vw, 64px);
   display: grid;
   align-content: center;
   gap: 24px;
+  position: relative;
+  z-index: 1;
 }
 .badge {
   display: inline-flex;
@@ -52,17 +100,34 @@ body {
 .mini-card {
   background: var(--panel);
   padding: 16px 18px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+}
+.hero-visual {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 24px;
+}
+.hero-visual img {
+  width: min(100%, 300px);
+  height: auto;
+  filter: drop-shadow(0 14px 30px rgba(27, 108, 255, 0.25));
+  opacity: 0.9;
+  border-radius: var(--radius-lg);
 }
 .panel {
   background: var(--panel);
-  margin: 64px;
-  padding: 40px;
-  border-radius: 24px;
+  margin: clamp(20px, 4vw, 64px);
+  padding: clamp(24px, 4.5vw, 40px);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   display: grid;
   gap: 16px;
+  position: relative;
+  z-index: 1;
+  background: rgba(10, 15, 24, 0.9);
+  border: 1px solid rgba(70, 140, 255, 0.22);
+  color: #e7eefc;
 }
 .form {
   display: grid;
@@ -72,18 +137,39 @@ body {
   display: grid;
   gap: 8px;
   font-weight: 600;
-  color: var(--slate);
+  color: rgba(214, 226, 248, 0.8);
 }
 input {
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid #d7ddea;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(70, 140, 255, 0.25);
   font-size: 15px;
+  background: rgba(11, 20, 36, 0.85);
+  color: #e7eefc;
+}
+
+input::placeholder {
+  color: rgba(214, 226, 248, 0.55);
+}
+
+input:focus {
+  outline: none;
+  border-color: rgba(120, 190, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(70, 140, 255, 0.2);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e7eefc;
+  transition: background-color 5000s ease-in-out 0s;
+  box-shadow: 0 0 0 1000px rgba(11, 20, 36, 0.95) inset;
+  caret-color: #e7eefc;
 }
 .btn {
   border: none;
   padding: 12px 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -109,8 +195,45 @@ input {
   }
   .hero,
   .panel {
-    margin: 32px;
-    padding: 28px;
+    margin: 24px;
+    padding: 24px;
+  }
+}
+
+@media (max-width: 820px) {
+  .hero,
+  .panel {
+    margin: 20px;
+    padding: 22px;
+  }
+  .card-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  body {
+    background-size: cover, cover, 320px auto;
+    background-position: center, center, center 10%;
+  }
+  .hero-visual img {
+    width: min(100%, 220px);
+    opacity: 0.86;
+  }
+  .panel {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@media (max-width: 420px) {
+  .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-motion {
+    display: none;
   }
 }
 

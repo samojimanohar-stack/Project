@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="../css/Template-auth.css" />
   </head>
   <body>
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
     <div class="layout">
       <section class="hero">
         <span class="badge">Secure Access</span>
@@ -28,11 +34,14 @@
           <button class="btn btn-primary" type="submit">Sign in</button>
           <p class="helper" id="login-status">Use your secure workspace credentials.</p>
           <p class="footer">
-            New here? <a class="link" href="Template-signup.html">Create account</a>
+            New here? <a class="link" href="/signup">Create account</a>
+          </p>
+          <p class="footer">
+            Forgot password? <a class="link" href="/forgot">Reset it</a>
           </p>
         </form>
       </section>
     </div>
-    <script src="js/Template-auth.js"></script>
+    <script src="../js/Template-auth.js"></script>
   </body>
 </html>

@@ -7,38 +7,97 @@
     <link rel="stylesheet" href="../css/Template.css" />
   </head>
   <body>
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
     <div class="shell">
       <header class="topbar">
         <div>
           <h1>Risk Dashboard</h1>
           <p class="helper">Monitor and score market transactions.</p>
         </div>
-        <a class="btn btn-ghost" href="Template-index.html">Home</a>
+        <div class="topbar-actions">
+          <a class="btn btn-ghost" id="admin-link" href="/admin" style="display: none;">Admin</a>
+          <a class="btn btn-ghost" href="/">Home</a>
+          <a class="btn btn-ghost" href="/logout">Logout</a>
+        </div>
       </header>
+      <section class="hero-banner">
+        <div class="hero-copy">
+          <span class="badge">Live Risk Intelligence</span>
+          <h2>Market Fraud Detection System</h2>
+          <p>
+            Visualize transaction anomalies, capture alerts, and prioritize investigations
+            with clarity.
+          </p>
+        </div>
+        <div class="hero-media">
+          <div class="hero-media-stack" aria-hidden="true">
+            <video
+              class="hero-video"
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              poster="../image/20260205_1536_image.png"
+            >
+              <source src="../image/output_free.mp4" type="video/mp4" />
+            </video>
+            <img
+              class="hero-video-overlay"
+              src="../image/20260205_1536_image.png"
+              alt=""
+            />
+          </div>
+        </div>
+      </section>
       <section class="grid">
         <div class="panel">
           <h2>Score a transaction</h2>
           <form class="form" id="predict-form">
             <label class="field">
-              Amount
-              <input type="number" name="amount" step="0.01" required placeholder="10000" />
+              Customer name
+              <input type="text" name="customer_name" required placeholder="Analyst name" />
             </label>
             <label class="field">
               Country
               <input type="text" name="country" placeholder="US" />
             </label>
             <label class="field">
-              Merchant risk score
-              <input type="number" name="merchant_risk_score" step="0.01" placeholder="0.2" />
+              Business
+              <input type="text" name="business" placeholder="Merchant / Business name" />
             </label>
             <label class="field">
-              Transactions last 1h
-              <input type="number" name="transactions_last_1h" step="1" placeholder="3" />
+              Previous two transactions
+              <input type="number" name="previous_transactions" step="1" placeholder="2" />
+            </label>
+            <label class="field">
+              Present transaction amount
+              <input type="number" name="present_transaction" step="0.01" required placeholder="10000" />
             </label>
             <button class="btn btn-primary" type="submit">Score</button>
           </form>
           <p class="helper" id="predict-status">Awaiting input.</p>
           <p class="result" id="predict-output">Risk: --</p>
+        </div>
+        <div class="panel center-content">
+          <h2>Upload CSV</h2>
+          <p>Upload a CSV file to score multiple transactions at once.</p>
+          <a class="btn btn-ghost" href="/csv/sample.csv" download>Download CSV template</a>
+          <form class="form" id="csv-form">
+            <label class="field">
+              CSV file
+              <input type="file" name="file" accept=".csv" required />
+            </label>
+            <button class="btn btn-primary" type="submit">Upload & score</button>
+          </form>
+          <p class="helper" id="csv-status">Waiting for file.</p>
+          <div class="result summary-card" id="csv-summary"></div>
+          <div class="helper summary-card summary-card-muted" id="csv-sample"></div>
         </div>
         <div class="panel">
           <h2>What happens next?</h2>
@@ -52,7 +111,44 @@
           </ul>
         </div>
       </section>
+      <section class="panel panel-viz panel-viz-full">
+        <h2>Data visualization</h2>
+        <p class="helper">Snapshot of recent fraud signals.</p>
+          <div class="viz-grid" aria-hidden="true">
+            <div class="viz-card">
+              <span class="viz-label">Risk trend</span>
+              <span class="viz-metric" id="viz-total">Total: --</span>
+              <div class="viz-line">
+                <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+                  <polyline id="viz-trend-line" points="0,30 25,22 50,28 75,18 100,24"></polyline>
+                </svg>
+              </div>
+            </div>
+            <div class="viz-card">
+              <span class="viz-label">Alerts mix</span>
+              <span class="viz-metric" id="viz-errors">Errors: --</span>
+              <div class="viz-bars">
+                <span class="viz-bar" data-index="0"></span>
+                <span class="viz-bar" data-index="1"></span>
+                <span class="viz-bar" data-index="2"></span>
+                <span class="viz-bar" data-index="3"></span>
+              </div>
+            </div>
+          </div>
+        <div class="viz-actions">
+          <button class="btn btn-ghost" id="download-visuals" type="button">
+            Download visuals
+          </button>
+          <span class="helper" id="download-visuals-status">Upload a CSV to enable download.</span>
+        </div>
+      </section>
+      <section class="panel panel-viz panel-viz-full">
+        <h2>Upload history</h2>
+        <p class="helper">Download previous CSV uploads with timestamps.</p>
+        <div class="history-list" id="history-list"></div>
+        <p class="helper" id="history-empty">Upload a file to see history.</p>
+      </section>
     </div>
-    <script src="js/Template.js"></script>
+    <script src="../js/Template.js"></script>
   </body>
 </html>

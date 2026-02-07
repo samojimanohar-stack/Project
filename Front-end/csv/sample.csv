@@ -1,0 +1,4 @@
+amount,country,merchant_risk_score,transactions_last_1h
+1200.50,US,0.15,2
+45000,GB,0.72,9
+9800,IN,0.38,4
