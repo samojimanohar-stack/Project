@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visuals | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template.css" />
+    <link rel="stylesheet" href="../css/Template-visuals.css" />
+  </head>
+  <body class="theme-experiment">
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
+    <div class="shell visuals-shell">
+      <header class="topbar">
+        <div>
+          <h1>Visuals Lab</h1>
+          <p class="helper">A focused view for risk charts and CSV summaries.</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="btn btn-ghost" href="/dashboard">Back to dashboard</a>
+          <a class="btn btn-ghost" href="/logout">Logout</a>
+        </div>
+      </header>
+      <section class="visuals-hero">
+        <div>
+          <span class="badge">Insight Focus</span>
+          <h2>Fraud signals, clarified.</h2>
+          <p class="helper">
+            This page highlights the latest upload and the clearest risk visuals in one place.
+          </p>
+        </div>
+        <div class="visuals-stats">
+          <div class="visuals-stat">
+            <span class="viz-label">Latest file</span>
+            <span class="viz-metric" id="vis-file">--</span>
+            <span class="helper" id="vis-updated">No uploads yet.</span>
+          </div>
+          <div class="visuals-stat">
+            <span class="viz-label">Total rows</span>
+            <span class="viz-metric" id="vis-total">--</span>
+          </div>
+          <div class="visuals-stat">
+            <span class="viz-label">Scored</span>
+            <span class="viz-metric" id="vis-scored">--</span>
+          </div>
+          <div class="visuals-stat">
+            <span class="viz-label">Errors</span>
+            <span class="viz-metric" id="vis-errors">--</span>
+          </div>
+          <div class="visuals-stat">
+            <span class="viz-label">Error rate</span>
+            <span class="viz-metric" id="vis-error-rate">--</span>
+          </div>
+        </div>
+      </section>
+      <section class="panel panel-viz panel-viz-full">
+        <h2>Data visualization</h2>
+        <p class="helper">Upload a CSV on the dashboard to populate this view.</p>
+        <div class="viz-controls">
+          <label class="field field-inline">
+            Chart type
+            <select id="viz-type">
+              <option value="line">Line plot</option>
+              <option value="pie">Pie chart</option>
+              <option value="histogram">Histogram</option>
+            </select>
+          </label>
+        </div>
+        <div class="viz-grid visuals-grid">
+          <div class="viz-card visuals-primary">
+            <span class="viz-label" id="viz-title">Risk trend</span>
+            <span class="viz-metric" id="viz-total">Total: --</span>
+            <span class="viz-metric viz-fields" id="viz-fields">Fields: --</span>
+            <div class="viz-chart">
+              <svg id="viz-chart" viewBox="0 0 200 120" role="img" aria-label="Fraud chart"></svg>
+            </div>
+            <div class="viz-legend" id="viz-legend"></div>
+          </div>
+          <div class="viz-card visuals-secondary">
+            <span class="viz-label">Alerts mix</span>
+            <span class="viz-metric" id="viz-errors">Errors: --</span>
+            <div class="viz-bars">
+              <span class="viz-bar" data-index="0"></span>
+              <span class="viz-bar" data-index="1"></span>
+              <span class="viz-bar" data-index="2"></span>
+              <span class="viz-bar" data-index="3"></span>
+            </div>
+          </div>
+        </div>
+        <div class="viz-actions">
+          <button class="btn btn-ghost" id="download-visuals" type="button">
+            Download visuals
+          </button>
+          <span class="helper" id="download-visuals-status">Upload a CSV to enable download.</span>
+        </div>
+      </section>
+      <section class="panel panel-viz panel-viz-full">
+        <h2>Latest upload summary</h2>
+        <p class="helper">Quick view of the most recent scoring run.</p>
+        <div class="result summary-card" id="csv-summary"></div>
+        <div class="helper summary-card summary-card-muted" id="csv-sample"></div>
+        <div class="visuals-samples" id="vis-samples"></div>
+      </section>
+    </div>
+    <script src="../js/Template-visuals.js"></script>
+  </body>
+</html>

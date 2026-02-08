@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Set New Password | Market Fraud Detection System</title>
     <link rel="stylesheet" href="../css/Template-auth.css" />
+    <link rel="stylesheet" href="../css/Template-visuals.css" />
   </head>
-  <body>
+  <body class="theme-experiment">
     <div class="bg-motion" aria-hidden="true">
       <video autoplay muted loop playsinline preload="metadata">
         <source src="../image/output_free.mp4" type="video/mp4" />
@@ -22,16 +23,48 @@
       <section class="panel">
         <h2>Set new password</h2>
         <p>Enter your new password below.</p>
+        <div class="status-banner is-hidden" id="reset-success-banner" role="status" aria-live="polite">
+          Password updated. Redirecting to sign in...
+        </div>
         <form class="form" id="reset-form">
           <label class="field">
             New password
-            <input type="password" name="password" required placeholder="New password" />
+            <div class="password-field">
+              <input type="password" name="password" required placeholder="New password" />
+              <button class="password-toggle" type="button" aria-label="Show password">
+                Show
+              </button>
+            </div>
+          </label>
+          <label class="field">
+            Confirm password
+            <div class="password-field">
+              <input
+                type="password"
+                name="confirm_password"
+                required
+                placeholder="Confirm password"
+              />
+              <button class="password-toggle" type="button" aria-label="Show password">
+                Show
+              </button>
+            </div>
           </label>
           <button class="btn btn-primary" type="submit">Update password</button>
           <p class="helper" id="reset-status">Ready to update.</p>
           <p class="footer">
             Back to <a class="link" href="/login">sign in</a>
           </p>
+        </form>
+        <form class="form is-hidden" id="resend-form">
+          <h3>Need a new reset link?</h3>
+          <p>Enter your email and we'll send a fresh link.</p>
+          <label class="field">
+            Work email
+            <input type="email" name="email" required placeholder="analyst@firm.com" />
+          </label>
+          <button class="btn btn-primary" type="submit">Resend reset link</button>
+          <p class="helper" id="reset-resend-status">We will email you shortly.</p>
         </form>
       </section>
     </div>

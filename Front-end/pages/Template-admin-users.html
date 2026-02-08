@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Management | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template.css" />
+    <link rel="stylesheet" href="../css/Template-visuals.css" />
+  </head>
+  <body class="theme-experiment">
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1>User Management</h1>
+          <p class="helper">Search, edit, deactivate, reset, or remove users.</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="btn btn-ghost" href="/admin">Admin console</a>
+          <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+          <a class="btn btn-ghost" href="/logout">Logout</a>
+        </div>
+      </header>
+
+      <section class="panel admin-layout">
+        <div class="admin-list">
+          <div class="admin-controls">
+            <label class="field">
+              Search
+              <input type="text" id="user-search" placeholder="Name or email" />
+            </label>
+            <label class="field">
+              Role
+              <select id="user-role-filter">
+                <option value="all">All</option>
+                <option value="admin">Admin</option>
+                <option value="analyst">Analyst</option>
+              </select>
+            </label>
+            <label class="field">
+              Status
+              <select id="user-status-filter">
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost" id="user-export" type="button">Export CSV</button>
+          </div>
+          <div class="admin-table" id="user-list"></div>
+          <p class="helper" id="user-list-status">Loading users...</p>
+        </div>
+
+        <div class="admin-detail" id="user-detail">
+          <h2>User details</h2>
+          <p class="helper">Select a user to edit details.</p>
+          <form class="form" id="user-detail-form">
+            <label class="field">
+              Name
+              <input type="text" id="detail-name" placeholder="User name" />
+            </label>
+            <label class="field">
+              Email
+              <input type="email" id="detail-email" readonly />
+            </label>
+            <label class="field">
+              Role
+              <select id="detail-role">
+                <option value="admin">Admin</option>
+                <option value="analyst">Analyst</option>
+              </select>
+            </label>
+            <label class="field field-inline">
+              Active
+              <input type="checkbox" id="detail-active" />
+            </label>
+            <div class="admin-detail-meta" id="detail-meta"></div>
+            <div class="admin-detail-actions">
+              <button class="btn btn-primary" type="submit">Save changes</button>
+              <button class="btn btn-ghost" type="button" id="detail-reset">
+                Send reset link
+              </button>
+              <button class="btn btn-ghost danger" type="button" id="detail-delete">
+                Delete user
+              </button>
+            </div>
+          </form>
+          <p class="helper" id="user-detail-status">No user selected.</p>
+        </div>
+      </section>
+    </div>
+    <script src="../js/Template-admin-users.js"></script>
+  </body>
+</html>

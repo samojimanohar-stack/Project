@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign In | Market Fraud Detection System</title>
     <link rel="stylesheet" href="../css/Template-auth.css" />
+    <link rel="stylesheet" href="../css/Template-visuals.css" />
   </head>
-  <body>
+  <body class="theme-experiment">
     <div class="bg-motion" aria-hidden="true">
       <video autoplay muted loop playsinline preload="metadata">
         <source src="../image/output_free.mp4" type="video/mp4" />
@@ -29,7 +30,12 @@
           </label>
           <label class="field">
             Password
-            <input type="password" name="password" required placeholder="Your password" />
+            <div class="password-field">
+              <input type="password" name="password" required placeholder="Your password" />
+              <button class="password-toggle" type="button" aria-label="Show password">
+                Show
+              </button>
+            </div>
           </label>
           <button class="btn btn-primary" type="submit">Sign in</button>
           <p class="helper" id="login-status">Use your secure workspace credentials.</p>

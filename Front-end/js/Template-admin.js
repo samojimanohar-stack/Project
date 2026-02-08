@@ -31,11 +31,12 @@ const loadUsers = async () => {
     status.textContent = "";
     data.users.forEach((user) => {
       const row = document.createElement("div");
-      row.className = "admin-row";
+      row.className = "admin-row admin-row-role";
       row.innerHTML = `
         <div>${user.name}</div>
         <div class="muted">${user.email}</div>
         <div class="admin-badge">${user.role}</div>
+        <div class="muted">${user.active ? "Active" : "Disabled"}</div>
         <div class="muted">${user.email_verified ? "Verified" : "Unverified"}</div>
         <div>
           <select class="field-role" data-id="${user.id}">

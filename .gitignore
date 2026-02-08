@@ -1,0 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local secrets
+Back-end/config/.env
+
+# Local database and uploads
+Back-end/db/Template-db.db
+Back-end/uploads/
