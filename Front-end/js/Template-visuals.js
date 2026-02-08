@@ -12,6 +12,8 @@ const loadLatestSummary = async () => {
     const data = await res.json();
     if (!res.ok || !data.items || !data.items.length) return;
     const latest = data.items[0];
+    const updatedEl = byId("vis-updated");
+    const fileEl = byId("vis-file");
     if (latest.summary) {
       const summaryText = `Rows: ${latest.summary.total} | Scored: ${latest.summary.scored} | Errors: ${latest.summary.errors}`;
       const summary = byId("csv-summary");
@@ -19,12 +21,45 @@ const loadLatestSummary = async () => {
         summary.textContent = summaryText;
         summary.classList.add("show");
       }
+      const totalEl = byId("vis-total");
+      const scoredEl = byId("vis-scored");
+      const errorsEl = byId("vis-errors");
+      const errorRateEl = byId("vis-error-rate");
+      if (totalEl) totalEl.textContent = latest.summary.total;
+      if (scoredEl) scoredEl.textContent = latest.summary.scored;
+      if (errorsEl) errorsEl.textContent = latest.summary.errors;
+      if (errorRateEl) {
+        const rate = latest.summary.total
+          ? Math.round((latest.summary.errors / latest.summary.total) * 100)
+          : 0;
+        errorRateEl.textContent = `${rate}%`;
+      }
     }
     if (latest.filename) {
       setStatus("download-visuals-status", `Latest file: ${latest.filename}`);
+      if (fileEl) fileEl.textContent = latest.filename;
+    }
+    if (updatedEl && latest.created_at) {
+      const created = new Date(latest.created_at + "Z");
+      updatedEl.textContent = Number.isNaN(created.getTime())
+        ? "Updated: --"
+        : `Updated: ${created.toLocaleString()}`;
     }
   } catch (err) {
     setStatus("download-visuals-status", "Unable to load history.");
+  }
+};
+
+const hydrateFromServer = async () => {
+  try {
+    const res = await fetch("/api/visuals/state");
+    const data = await res.json();
+    if (!res.ok || !data.state) return false;
+    updateVisuals(data.state.summary, data.state.samples || [], data.state.fields || []);
+    renderInsight(data.state.summary, data.state.samples || [], data.state.fields || []);
+    return true;
+  } catch (err) {
+    return false;
   }
 };
 
@@ -34,6 +69,7 @@ const hydrateFromSession = () => {
     if (saved) {
       vizState = JSON.parse(saved);
       updateVisuals(vizState.summary, vizState.samples, vizState.fields || []);
+      renderInsight(vizState.summary, vizState.samples || [], vizState.fields || []);
       return true;
     }
   } catch (err) {
@@ -83,6 +119,35 @@ const updateVisuals = (summary = null, samples = [], fields = []) => {
   }
 
   renderVizChart();
+};
+
+const renderInsight = (summary, samples, fields) => {
+  const container = byId("vis-insight");
+  if (!container) return;
+  if (!summary) {
+    container.textContent = "Upload a CSV to see a summary insight here.";
+    return;
+  }
+  const scoredRate = summary.total
+    ? Math.round((summary.scored / summary.total) * 100)
+    : 0;
+  const errorRate = summary.total
+    ? Math.round((summary.errors / summary.total) * 100)
+    : 0;
+  const counts = summary.label_counts || {};
+  const fraudCount = counts.Fraud ?? 0;
+  const reviewCount = counts.Review ?? 0;
+  const normalCount = counts.Normal ?? 0;
+  const fraudRate = summary.scored
+    ? Math.round((fraudCount / summary.scored) * 100)
+    : 0;
+  const fieldsText = fields && fields.length ? fields.slice(0, 6).join(", ") : "—";
+  container.innerHTML = `
+    <strong>Insight summary</strong><br />
+    Scored <strong>${scoredRate}%</strong> of rows with an error rate of <strong>${errorRate}%</strong>.<br />
+    Fraud rate: <strong>${fraudRate}%</strong> (Fraud ${fraudCount}, Review ${reviewCount}, Normal ${normalCount}).<br />
+    Fields used: ${fieldsText}.
+  `;
 };
 
 const initVizControls = () => {
@@ -397,7 +462,9 @@ const handleVisualDownload = () => {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  hydrateFromSession();
+  hydrateFromServer().then((loaded) => {
+    if (!loaded) hydrateFromSession();
+  });
   initVizControls();
   handleVisualDownload();
   loadLatestSummary();

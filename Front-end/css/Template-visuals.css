@@ -102,6 +102,22 @@
   border: 1px solid rgba(120, 190, 255, 0.2);
 }
 
+.theme-experiment .visuals-insight {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(7, 12, 22, 0.78);
+  border: 1px solid rgba(95, 210, 168, 0.18);
+  box-shadow: 0 10px 26px rgba(5, 8, 16, 0.35);
+  color: rgba(230, 240, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.theme-experiment .visuals-insight strong {
+  color: #6af0c2;
+}
+
 .theme-experiment .helper {
   color: rgba(195, 210, 240, 0.75);
 }

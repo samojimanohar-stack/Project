@@ -7,8 +7,8 @@ Use PythonAnywhere Files UI to upload the project folder, or clone from Git if t
 
 Recommended structure on PythonAnywhere:
 ```
-/home/<your-username>/Market-Fraud-Detection-System(Web App)/Back-end
-/home/<your-username>/Market-Fraud-Detection-System(Web App)/Front-end
+/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Back-end
+/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Front-end
 ```
 
 ## 2) Create Virtual Environment + Install Dependencies
@@ -28,14 +28,14 @@ Go to **Web** tab ? **Add a new web app**:
 Set:
 - **Working directory:**
   ```
-  /home/<your-username>/Market-Fraud-Detection-System(Web App)/Back-end
+  /home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Back-end
   ```
 
 - **WSGI configuration file** (replace the default contents with):
 ```python
 import sys
 
-path = '/home/<your-username>/Market-Fraud-Detection-System(Web App)/Back-end'
+path = '/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Back-end'
 if path not in sys.path:
     sys.path.append(path)
 
@@ -56,10 +56,10 @@ ADMIN_EMAIL=your_email@gmail.com
 
 ## 5) Static Files (Optional)
 If you want PythonAnywhere to serve static files directly (optional), set:
-- **URL:** `/css` ? **Directory:** `/home/<your-username>/Market-Fraud-Detection-System(Web App)/Front-end/css`
-- **URL:** `/js` ? **Directory:** `/home/<your-username>/Market-Fraud-Detection-System(Web App)/Front-end/js`
-- **URL:** `/image` ? **Directory:** `/home/<your-username>/Market-Fraud-Detection-System(Web App)/Front-end/image`
-- **URL:** `/pages` ? **Directory:** `/home/<your-username>/Market-Fraud-Detection-System(Web App)/Front-end/pages`
+- **URL:** `/css` ? **Directory:** `/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Front-end/css`
+- **URL:** `/js` ? **Directory:** `/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Front-end/js`
+- **URL:** `/image` ? **Directory:** `/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Front-end/image`
+- **URL:** `/pages` ? **Directory:** `/home/ManoharSamoji/Market-Fraud-Detection-System(Web App)/Front-end/pages`
 
 (Your Flask app already serves these, so this step is optional.)
 

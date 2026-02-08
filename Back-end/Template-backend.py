@@ -788,6 +788,7 @@ def api_upload_csv():
   total = 0
   scored = 0
   errors = 0
+  label_counts = {"Fraud": 0, "Review": 0, "Normal": 0}
   results = []
   for index, row in enumerate(reader, start=1):
     total += 1
@@ -798,6 +799,8 @@ def api_upload_csv():
       continue
     prediction = MODEL.predict(cleaned)
     scored += 1
+    if prediction.label in label_counts:
+      label_counts[prediction.label] += 1
     results.append(
       {
         "row": index,
@@ -809,7 +812,12 @@ def api_upload_csv():
     if total >= 1000:
       break
   samples = [r for r in results if "label" in r][:5]
-  summary = {"total": total, "scored": scored, "errors": errors}
+  summary = {
+    "total": total,
+    "scored": scored,
+    "errors": errors,
+    "label_counts": label_counts,
+  }
   with get_db() as conn:
     conn.execute(
       """
@@ -924,6 +932,7 @@ def api_upload_pdf():
   total = 0
   scored = 0
   errors = 0
+  label_counts = {"Fraud": 0, "Review": 0, "Normal": 0}
   results = []
   for index, row in enumerate(rows, start=1):
     total += 1
@@ -934,6 +943,8 @@ def api_upload_pdf():
       continue
     prediction = MODEL.predict(cleaned)
     scored += 1
+    if prediction.label in label_counts:
+      label_counts[prediction.label] += 1
     results.append(
       {
         "row": index,
@@ -945,7 +956,12 @@ def api_upload_pdf():
     if total >= 1000:
       break
   samples = [r for r in results if "label" in r][:5]
-  summary = {"total": total, "scored": scored, "errors": errors}
+  summary = {
+    "total": total,
+    "scored": scored,
+    "errors": errors,
+    "label_counts": label_counts,
+  }
   with get_db() as conn:
     conn.execute(
       """
