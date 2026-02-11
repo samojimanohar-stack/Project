@@ -22,6 +22,7 @@
         </div>
         <div class="topbar-actions">
           <a class="btn btn-ghost" id="admin-link" href="/admin" style="display: none;">Admin</a>
+          <a class="btn btn-ghost" href="/profile">Profile</a>
           <a class="btn btn-ghost" href="/">Home</a>
           <a class="btn btn-ghost" href="/logout">Logout</a>
         </div>
@@ -87,12 +88,12 @@
         </div>
         <div class="panel center-content">
           <h2>Upload CSV</h2>
-          <p>Upload a CSV or PDF file to score multiple transactions at once.</p>
+          <p>Upload a CSV file to score multiple transactions at once.</p>
           <a class="btn btn-ghost" href="/csv/sample.csv" download>Download CSV template</a>
           <form class="form" id="csv-form">
             <label class="field">
-              CSV/PDF file
-              <input type="file" name="file" accept=".csv,.pdf" required />
+              CSV file
+              <input type="file" name="file" accept=".csv" required />
             </label>
             <button class="btn btn-primary" type="submit">Upload & score</button>
           </form>

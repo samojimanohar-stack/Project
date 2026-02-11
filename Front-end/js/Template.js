@@ -95,10 +95,8 @@ const handleCsvUpload = () => {
       const isCsv = file.name.toLowerCase().endsWith(".csv");
       const sizeKb = Math.round(file.size / 1024);
       setMiniStatus(
-        `${file.name} • ${sizeKb} KB • ${
-          isCsv ? "CSV detected" : file.name.toLowerCase().endsWith(".pdf") ? "PDF detected" : "Unsupported file type"
-        }`,
-        isCsv || file.name.toLowerCase().endsWith(".pdf") ? "success" : "error"
+        `${file.name} • ${sizeKb} KB • ${isCsv ? "CSV detected" : "Unsupported file type"}`,
+        isCsv ? "success" : "error"
       );
     });
   }
@@ -113,14 +111,13 @@ const handleCsvUpload = () => {
     const file = fileInput.files[0];
     const lowerName = file.name.toLowerCase();
     const isCsv = lowerName.endsWith(".csv");
-    const isPdf = lowerName.endsWith(".pdf");
-    if (!isCsv && !isPdf) {
-      setStatus("csv-status", "Only CSV or PDF files are supported.");
+    if (!isCsv) {
+      setStatus("csv-status", "Only CSV files are supported.");
       const sizeKb = Math.round(file.size / 1024);
       setMiniStatus(`${file.name} • ${sizeKb} KB • Unsupported file type`, "error");
       return;
     }
-    const csvFields = isCsv ? await readCsvHeader(file) : [];
+    const csvFields = await readCsvHeader(file);
     setStatus("csv-status", "Uploading and scoring...");
     const summary = byId("csv-summary");
     const sample = byId("csv-sample");
@@ -136,8 +133,7 @@ const handleCsvUpload = () => {
     formData.append("file", file);
     try {
       if (!csrfToken) await initCsrf();
-      const endpoint = isPdf ? "/api/upload-pdf" : "/api/upload-csv";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/upload-csv", {
         method: "POST",
         headers: { "X-CSRF-Token": csrfToken },
         body: formData,

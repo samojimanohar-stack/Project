@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile | Market Fraud Detection System</title>
+    <link rel="stylesheet" href="../css/Template.css" />
+    <link rel="stylesheet" href="../css/Template-visuals.css" />
+  </head>
+  <body class="theme-experiment">
+    <div class="bg-motion" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata">
+        <source src="../image/output_free.mp4" type="video/mp4" />
+      </video>
+      <span class="bg-motion-overlay"></span>
+    </div>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Your Profile</h1>
+          <p class="helper">Manage your account details and password.</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+          <a class="btn btn-ghost" href="/logout">Logout</a>
+        </div>
+      </header>
+      <section class="grid">
+        <div class="panel">
+          <h2>Profile details</h2>
+          <form class="form" id="profile-form">
+            <label class="field">
+              Name
+              <input type="text" id="profile-name" required />
+            </label>
+            <label class="field">
+              Email
+              <input type="email" id="profile-email" readonly />
+            </label>
+            <label class="field">
+              Role
+              <input type="text" id="profile-role" readonly />
+            </label>
+            <button class="btn btn-primary" type="submit">Save changes</button>
+          </form>
+          <p class="helper" id="profile-status">Loading profile...</p>
+          <div class="admin-detail-meta" id="profile-meta"></div>
+        </div>
+        <div class="panel">
+          <h2>Change password</h2>
+          <form class="form" id="password-form">
+            <label class="field">
+              Current password
+              <input type="password" id="current-password" required />
+            </label>
+            <label class="field">
+              New password
+              <input type="password" id="new-password" required />
+            </label>
+            <button class="btn btn-primary" type="submit">Update password</button>
+          </form>
+          <p class="helper" id="password-status">Use a strong password.</p>
+        </div>
+      </section>
+    </div>
+    <script src="../js/Template-profile.js"></script>
+  </body>
+</html>

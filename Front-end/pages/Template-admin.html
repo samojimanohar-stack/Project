@@ -32,6 +32,36 @@
         <div class="admin-table" id="admin-table"></div>
         <p class="helper" id="admin-status">Loading users...</p>
       </section>
+      <section class="panel">
+        <h2>System health</h2>
+        <p class="helper">Backend pipeline status.</p>
+        <div class="admin-health" id="admin-health">Checking...</div>
+      </section>
+      <section class="panel">
+        <h2>Audit log</h2>
+        <p class="helper">Recent admin actions.</p>
+        <div class="admin-log" id="admin-log"></div>
+        <p class="helper" id="admin-log-status">Loading audit log...</p>
+      </section>
+      <section class="panel">
+        <h2>Model evaluation</h2>
+        <p class="helper">Upload a labeled CSV (must include a 'label' column).</p>
+        <form class="form" id="eval-form">
+          <label class="field">
+            Labeled CSV
+            <input type="file" id="eval-file" accept=".csv" required />
+          </label>
+          <button class="btn btn-primary" type="submit">Evaluate model</button>
+        </form>
+        <p class="helper" id="eval-status">Awaiting file.</p>
+        <div class="admin-log" id="eval-result"></div>
+      </section>
+      <section class="panel">
+        <h2>Evaluation history</h2>
+        <p class="helper">Recent evaluation runs with download links.</p>
+        <div class="admin-log" id="eval-history"></div>
+        <p class="helper" id="eval-history-status">Loading evaluation history...</p>
+      </section>
     </div>
     <script src="../js/Template-admin.js"></script>
   </body>

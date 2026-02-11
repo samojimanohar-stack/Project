@@ -10,7 +10,7 @@ import sqlite3
 import smtplib
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from PyPDF2 import PdfReader
+import re
 from flask import Flask, jsonify, redirect, request, send_from_directory, session
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
@@ -30,6 +30,7 @@ app = Flask(__name__, static_folder=None)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 app.permanent_session_lifetime = timedelta(minutes=30)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
+TEST_MODE = os.getenv("TEST_MODE", "").lower() in {"1", "true", "yes"}
 
 
 def get_db() -> sqlite3.Connection:
@@ -56,6 +57,8 @@ def init_db() -> None:
         verify_expires TEXT,
         reset_token TEXT,
         reset_expires TEXT,
+        last_login TEXT,
+        login_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
       """
@@ -75,6 +78,10 @@ def init_db() -> None:
       conn.execute("ALTER TABLE users ADD COLUMN reset_token TEXT")
     if "reset_expires" not in cols:
       conn.execute("ALTER TABLE users ADD COLUMN reset_expires TEXT")
+    if "last_login" not in cols:
+      conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
+    if "login_count" not in cols:
+      conn.execute("ALTER TABLE users ADD COLUMN login_count INTEGER NOT NULL DEFAULT 0")
     conn.execute(
       """
       CREATE TABLE IF NOT EXISTS upload_history (
@@ -95,6 +102,29 @@ def init_db() -> None:
         samples TEXT,
         fields TEXT,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+      """
+    )
+    conn.execute(
+      """
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        target_id INTEGER,
+        detail TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+      """
+    )
+    conn.execute(
+      """
+      CREATE TABLE IF NOT EXISTS evaluation_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        metrics TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
       """
     )
@@ -136,6 +166,20 @@ def require_admin(user_id: int) -> bool:
   return bool(row) and row["email"].lower() == ADMIN_EMAIL
 
 
+def log_audit(actor_id: int, action: str, target_id: int | None = None, detail: str | None = None) -> None:
+  try:
+    with get_db() as conn:
+      conn.execute(
+        """
+        INSERT INTO audit_logs (actor_id, action, target_id, detail)
+        VALUES (?, ?, ?, ?)
+        """,
+        (actor_id, action, target_id, detail),
+      )
+  except Exception:
+    pass
+
+
 def ensure_csrf() -> str:
   token = session.get("csrf_token")
   if not token:
@@ -172,6 +216,8 @@ def password_policy(password: str) -> list[str]:
 
 
 def smtp_configured() -> bool:
+  if os.getenv("SMTP_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+    return False
   return all(
     os.getenv(key)
     for key in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM")
@@ -190,8 +236,9 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
   port = int(os.getenv("SMTP_PORT", "587"))
   user = os.getenv("SMTP_USER")
   password = os.getenv("SMTP_PASS")
+  timeout = float(os.getenv("SMTP_TIMEOUT", "5"))
   try:
-    with smtplib.SMTP(host, port) as smtp:
+    with smtplib.SMTP(host, port, timeout=timeout) as smtp:
       smtp.starttls()
       smtp.login(user, password)
       smtp.send_message(msg)
@@ -213,30 +260,61 @@ def parse_pdf_table(text: str) -> tuple[list[Dict[str, str]], list[str], str | N
   lines = [line.strip() for line in text.splitlines() if line.strip()]
   if not lines:
     return [], [], "No readable text found in PDF."
-  for idx, line in enumerate(lines):
-    delimiter = "," if "," in line else "\t" if "\t" in line else None
-    if not delimiter:
-      continue
-    headers = [h.strip().strip('"') for h in line.split(delimiter)]
+
+  def parse_delimited(header_line: str, delimiter: str, data_lines: list[str]):
+    headers = [h.strip().strip('"') for h in header_line.split(delimiter)]
     normalized = [normalize_header(h) for h in headers]
     if "amount" not in normalized:
-      continue
-    data_lines: list[str] = []
-    for row_line in lines[idx + 1 :]:
-      if delimiter in row_line:
-        data_lines.append(row_line)
-      elif data_lines:
-        break
-    if not data_lines:
-      return [], [], "No data rows found in PDF table."
+      return None
     csv_text = "\n".join([delimiter.join(headers)] + data_lines)
     reader = csv.DictReader(io.StringIO(csv_text), delimiter=delimiter)
     rows: list[Dict[str, str]] = []
     for row in reader:
       cleaned = {normalize_header(k): v for k, v in row.items() if k}
       rows.append(cleaned)
-    return rows, headers, None
-  return [], [], "Could not detect a tabular CSV-like table in the PDF."
+    return rows, headers
+
+  def parse_fixed_width(header_line: str, data_lines: list[str]):
+    headers = [h.strip().strip('"') for h in re.split(r"\s{2,}", header_line)]
+    normalized = [normalize_header(h) for h in headers]
+    if "amount" not in normalized:
+      return None
+    rows: list[Dict[str, str]] = []
+    for row_line in data_lines:
+      values = [v.strip().strip('"') for v in re.split(r"\s{2,}", row_line)]
+      row = {headers[i]: values[i] if i < len(values) else "" for i in range(len(headers))}
+      cleaned = {normalize_header(k): v for k, v in row.items() if k}
+      rows.append(cleaned)
+    return rows, headers
+
+  for idx, line in enumerate(lines):
+    delimiter = "," if "," in line else "\t" if "\t" in line else "|" if "|" in line else None
+    if delimiter:
+      data_lines: list[str] = []
+      for row_line in lines[idx + 1 :]:
+        if delimiter in row_line:
+          data_lines.append(row_line)
+        elif data_lines:
+          break
+      if data_lines:
+        parsed = parse_delimited(line, delimiter, data_lines)
+        if parsed:
+          return parsed[0], parsed[1], None
+      continue
+
+    if re.search(r"\s{2,}", line):
+      data_lines = []
+      for row_line in lines[idx + 1 :]:
+        if re.search(r"\s{2,}", row_line):
+          data_lines.append(row_line)
+        elif data_lines:
+          break
+      if data_lines:
+        parsed = parse_fixed_width(line, data_lines)
+        if parsed:
+          return parsed[0], parsed[1], None
+
+  return [], [], "PDF upload is disabled in this deployment."
 @app.get("/")
 def index():
   return send_from_directory(PAGES_DIR, "Template-index.html")
@@ -280,6 +358,11 @@ def dashboard():
   if not current_user_id():
     return redirect("/login")
   return send_from_directory(PAGES_DIR, "Template-dashboard.html")
+@app.get("/profile")
+def profile():
+  if not current_user_id():
+    return redirect("/login")
+  return send_from_directory(PAGES_DIR, "Template-profile.html")
 @app.get("/visuals")
 def visuals():
   if not current_user_id():
@@ -305,6 +388,70 @@ def csv_files(filename: str):
 @app.get("/api/csrf")
 def api_csrf():
   return jsonify({"status": "ok", "token": ensure_csrf()})
+@app.get("/api/health")
+def api_health():
+  try:
+    with get_db() as conn:
+      conn.execute("SELECT 1").fetchone()
+    db_ok = True
+  except Exception:
+    db_ok = False
+  return jsonify(
+    {
+      "status": "ok" if db_ok else "error",
+      "db": "ok" if db_ok else "error",
+      "model": MODEL_SOURCE,
+      "time": datetime.utcnow().isoformat() + "Z",
+    }
+  )
+
+
+@app.post("/api/test/create-user")
+def api_test_create_user():
+  if not TEST_MODE:
+    return jsonify({"status": "error", "message": "Test mode disabled."}), 403
+  payload: Dict[str, Any] = request.get_json(silent=True) or {}
+  email = str(payload.get("email", "")).strip().lower()
+  password = str(payload.get("password", "")).strip()
+  name = str(payload.get("name", "Test User")).strip() or "Test User"
+  role = str(payload.get("role", "analyst")).strip().lower()
+  if not email or not password:
+    return jsonify({"status": "error", "message": "Email and password required."}), 400
+  if role not in {"admin", "analyst"}:
+    return jsonify({"status": "error", "message": "Invalid role."}), 400
+  with get_db() as conn:
+    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    if existing:
+      conn.execute(
+        """
+        UPDATE users
+        SET name = ?, password_hash = ?, role = ?, email_verified = 1, active = 1
+        WHERE email = ?
+        """,
+        (name, generate_password_hash(password), role, email),
+      )
+    else:
+      conn.execute(
+        """
+        INSERT INTO users (name, email, password_hash, role, email_verified, active)
+        VALUES (?, ?, ?, ?, 1, 1)
+        """,
+        (name, email, generate_password_hash(password), role),
+      )
+  return jsonify({"status": "ok"})
+
+
+@app.delete("/api/test/delete-user")
+def api_test_delete_user():
+  if not TEST_MODE:
+    return jsonify({"status": "error", "message": "Test mode disabled."}), 403
+  payload: Dict[str, Any] = request.get_json(silent=True) or {}
+  email = str(payload.get("email", "")).strip().lower()
+  if not email:
+    return jsonify({"status": "error", "message": "Email required."}), 400
+  with get_db() as conn:
+    conn.execute("DELETE FROM users WHERE email = ?", (email,))
+  return jsonify({"status": "ok"})
 @app.get("/api/me")
 def api_me():
   user_id = current_user_id()
@@ -313,6 +460,50 @@ def api_me():
   with get_db() as conn:
     row = conn.execute("SELECT id, email, role FROM users WHERE id = ?", (user_id,)).fetchone()
   return jsonify({"status": "ok", "user": dict(row) if row else None})
+@app.get("/api/profile")
+def api_profile():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  with get_db() as conn:
+    row = conn.execute(
+      "SELECT id, name, email, role, last_login, login_count, created_at FROM users WHERE id = ?",
+      (user_id,),
+    ).fetchone()
+  return jsonify({"status": "ok", "user": dict(row) if row else None})
+@app.post("/api/profile")
+def api_profile_update():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  payload: Dict[str, Any] = request.get_json(silent=True) or {}
+  name = str(payload.get("name", "")).strip()
+  if not name:
+    return jsonify({"status": "error", "message": "Name is required."}), 400
+  with get_db() as conn:
+    conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+  log_audit(user_id, "profile_update", user_id, "name")
+  return jsonify({"status": "ok", "message": "Profile updated."})
+@app.post("/api/change-password")
+def api_change_password():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  payload: Dict[str, Any] = request.get_json(silent=True) or {}
+  current_password = str(payload.get("current_password", "")).strip()
+  new_password = str(payload.get("new_password", "")).strip()
+  if not current_password or not new_password:
+    return jsonify({"status": "error", "message": "Current and new password required."}), 400
+  policy_errors = password_policy(new_password)
+  if policy_errors:
+    return jsonify({"status": "error", "message": " ".join(policy_errors)}), 400
+  with get_db() as conn:
+    row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row or not check_password_hash(row["password_hash"], current_password):
+      return jsonify({"status": "error", "message": "Current password is incorrect."}), 400
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(new_password), user_id))
+  log_audit(user_id, "password_change", user_id)
+  return jsonify({"status": "ok", "message": "Password changed."})
 @app.get("/api/admin/users")
 def api_admin_users():
   user_id = current_user_id()
@@ -322,7 +513,11 @@ def api_admin_users():
     return jsonify({"status": "error", "message": "Admin role required."}), 403
   with get_db() as conn:
     rows = conn.execute(
-      "SELECT id, name, email, role, active, email_verified, created_at FROM users ORDER BY id ASC"
+      """
+      SELECT id, name, email, role, active, email_verified, created_at, last_login, login_count
+      FROM users
+      ORDER BY id ASC
+      """
     ).fetchall()
   users = [dict(row) for row in rows]
   return jsonify({"status": "ok", "users": users})
@@ -352,6 +547,7 @@ def api_admin_role():
       if admins and admins["total"] <= 1:
         return jsonify({"status": "error", "message": "At least one admin required."}), 400
     conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, target_id))
+  log_audit(user_id, "role_change", target_id, f"role={role}")
   return jsonify({"status": "ok", "message": "Role updated."})
 
 
@@ -429,6 +625,7 @@ def api_admin_user_update():
       return jsonify({"status": "error", "message": "No changes provided."}), 400
     values.append(target_id)
     conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", values)
+  log_audit(user_id, "user_update", target_id, f"fields={','.join([u.split('=')[0].strip() for u in updates])}")
   return jsonify({"status": "ok", "message": "User updated."})
 
 
@@ -462,6 +659,7 @@ def api_admin_user_reset():
   payload = {"status": "ok", "message": "Reset link sent."}
   if not email_sent:
     payload["reset_url"] = reset_url
+  log_audit(user_id, "password_reset", target_id)
   return jsonify(payload)
 
 
@@ -500,7 +698,26 @@ def api_admin_user_delete(target_id: int):
         path.unlink()
       except Exception:
         pass
+  log_audit(user_id, "user_delete", target_id)
   return jsonify({"status": "ok", "message": "User deleted."})
+@app.get("/api/admin/audit")
+def api_admin_audit():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  with get_db() as conn:
+    rows = conn.execute(
+      """
+      SELECT a.id, a.actor_id, u.email as actor_email, a.action, a.target_id, a.detail, a.created_at
+      FROM audit_logs a
+      LEFT JOIN users u ON u.id = a.actor_id
+      ORDER BY a.id DESC
+      LIMIT 50
+      """
+    ).fetchall()
+  return jsonify({"status": "ok", "items": [dict(row) for row in rows]})
 @app.get("/api/history")
 def api_history():
   user_id = current_user_id()
@@ -592,6 +809,169 @@ def api_test_email():
   if not sent:
     return jsonify({"status": "error", "message": "SMTP not configured or send failed."}), 500
   return jsonify({"status": "ok", "message": "Test email sent."})
+
+
+def normalize_label(value: str) -> str:
+  val = str(value or "").strip().lower()
+  if val in {"fraud", "1", "true", "yes"}:
+    return "Fraud"
+  if val in {"review", "flag", "suspicious"}:
+    return "Review"
+  return "Normal"
+
+
+@app.post("/api/evaluate-csv")
+def api_evaluate_csv():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  if "file" not in request.files:
+    return jsonify({"status": "error", "message": "CSV file missing."}), 400
+  file = request.files["file"]
+  if not file or not file.filename:
+    return jsonify({"status": "error", "message": "CSV file missing."}), 400
+  try:
+    content = file.read().decode("utf-8-sig")
+  except Exception:
+    return jsonify({"status": "error", "message": "Unable to read CSV file."}), 400
+  reader = csv.DictReader(io.StringIO(content))
+  if not reader.fieldnames or "label" not in [normalize_header(h) for h in reader.fieldnames]:
+    return jsonify({"status": "error", "message": "CSV must include a 'label' column."}), 400
+
+  total = 0
+  correct = 0
+  confusion = {"TP": 0, "FP": 0, "TN": 0, "FN": 0}
+  for row in reader:
+    total += 1
+    raw_label = row.get("label") or row.get("Label") or row.get("LABEL")
+    true_label = normalize_label(raw_label)
+    cleaned, errs = validate_features(row)
+    if errs:
+      continue
+    pred = MODEL.predict(cleaned).label
+    pred_label = normalize_label(pred)
+    if pred_label == true_label:
+      correct += 1
+    is_pos = true_label == "Fraud"
+    is_pred_pos = pred_label == "Fraud"
+    if is_pos and is_pred_pos:
+      confusion["TP"] += 1
+    elif (not is_pos) and is_pred_pos:
+      confusion["FP"] += 1
+    elif (not is_pos) and (not is_pred_pos):
+      confusion["TN"] += 1
+    else:
+      confusion["FN"] += 1
+
+  precision = (
+    confusion["TP"] / (confusion["TP"] + confusion["FP"])
+    if (confusion["TP"] + confusion["FP"]) > 0
+    else 0
+  )
+  recall = (
+    confusion["TP"] / (confusion["TP"] + confusion["FN"])
+    if (confusion["TP"] + confusion["FN"]) > 0
+    else 0
+  )
+  f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
+  accuracy = (correct / total) if total > 0 else 0
+
+  metrics = {
+    "total": total,
+    "accuracy": round(accuracy, 4),
+    "precision": round(precision, 4),
+    "recall": round(recall, 4),
+    "f1": round(f1, 4),
+    "confusion": confusion,
+  }
+
+  with get_db() as conn:
+    conn.execute(
+      """
+      INSERT INTO evaluation_history (user_id, filename, metrics)
+      VALUES (?, ?, ?)
+      """,
+      (user_id, file.filename, json.dumps(metrics)),
+    )
+  log_audit(user_id, "model_evaluation", None, f"file={file.filename}")
+
+  return jsonify({"status": "ok", **metrics})
+
+
+@app.get("/api/admin/evaluations")
+def api_admin_evaluations():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  with get_db() as conn:
+    rows = conn.execute(
+      """
+      SELECT id, filename, metrics, created_at
+      FROM evaluation_history
+      WHERE user_id = ?
+      ORDER BY id DESC
+      LIMIT 20
+      """,
+      (user_id,),
+    ).fetchall()
+  items = []
+  for row in rows:
+    try:
+      metrics = json.loads(row["metrics"]) if row["metrics"] else None
+    except Exception:
+      metrics = None
+    items.append(
+      {
+        "id": row["id"],
+        "filename": row["filename"],
+        "metrics": metrics,
+        "created_at": row["created_at"],
+      }
+    )
+  return jsonify({"status": "ok", "items": items})
+
+
+@app.get("/api/admin/evaluations/<int:eval_id>/download")
+def api_admin_evaluation_download(eval_id: int):
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  with get_db() as conn:
+    row = conn.execute(
+      """
+      SELECT filename, metrics, created_at
+      FROM evaluation_history
+      WHERE id = ? AND user_id = ?
+      """,
+      (eval_id, user_id),
+    ).fetchone()
+  if not row:
+    return jsonify({"status": "error", "message": "Evaluation not found."}), 404
+  metrics = json.loads(row["metrics"]) if row["metrics"] else {}
+  csv_text = "metric,value\n"
+  csv_text += f"filename,{row['filename']}\n"
+  csv_text += f"created_at,{row['created_at']}\n"
+  csv_text += f"total,{metrics.get('total', '')}\n"
+  csv_text += f"accuracy,{metrics.get('accuracy', '')}\n"
+  csv_text += f"precision,{metrics.get('precision', '')}\n"
+  csv_text += f"recall,{metrics.get('recall', '')}\n"
+  csv_text += f"f1,{metrics.get('f1', '')}\n"
+  conf = metrics.get("confusion", {})
+  csv_text += f"confusion_TP,{conf.get('TP', '')}\n"
+  csv_text += f"confusion_FP,{conf.get('FP', '')}\n"
+  csv_text += f"confusion_TN,{conf.get('TN', '')}\n"
+  csv_text += f"confusion_FN,{conf.get('FN', '')}\n"
+  return app.response_class(
+    csv_text,
+    mimetype="text/csv",
+    headers={"Content-Disposition": f"attachment; filename=evaluation_{eval_id}.csv"},
+  )
 @app.post("/api/signup")
 def api_signup():
   payload: Dict[str, Any] = request.get_json(silent=True) or {}
@@ -641,7 +1021,7 @@ def api_login():
     return jsonify({"status": "error", "message": "Email and password required."}), 400
   with get_db() as conn:
     row = conn.execute(
-      "SELECT id, password_hash, email_verified, active FROM users WHERE email = ?",
+      "SELECT id, password_hash, email_verified, active, login_count FROM users WHERE email = ?",
       (email,),
     ).fetchone()
   if not row or not check_password_hash(row["password_hash"], password):
@@ -650,6 +1030,16 @@ def api_login():
     return jsonify({"status": "error", "message": "Account disabled."}), 403
   if not row["email_verified"]:
     return jsonify({"status": "error", "message": "Verify your email before signing in."}), 403
+  with get_db() as conn:
+    conn.execute(
+      """
+      UPDATE users
+      SET last_login = datetime('now'),
+          login_count = COALESCE(login_count, 0) + 1
+      WHERE id = ?
+      """,
+      (row["id"],),
+    )
   session["user_id"] = row["id"]
   session.permanent = True
   return jsonify({"status": "ok", "message": "Signed in"})
@@ -899,84 +1289,6 @@ def api_visuals_state_save():
 
 @app.post("/api/upload-pdf")
 def api_upload_pdf():
-  if not current_user_id():
-    return jsonify({"status": "error", "message": "Authentication required."}), 401
-  if "file" not in request.files:
-    return jsonify({"status": "error", "message": "PDF file missing."}), 400
-  file = request.files["file"]
-  if not file or not file.filename:
-    return jsonify({"status": "error", "message": "PDF file missing."}), 400
-  if not file.filename.lower().endswith(".pdf"):
-    return jsonify({"status": "error", "message": "Only PDF files are supported."}), 400
-  original_name = file.filename
-  safe_name = secure_filename(original_name) or "upload.pdf"
-  timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-  stored_name = f"{timestamp}_{safe_name}"
-  stored_path = UPLOAD_DIR / stored_name
-  try:
-    file.save(stored_path)
-  except Exception:
-    return jsonify({"status": "error", "message": "Unable to save PDF file."}), 400
-  try:
-    reader = PdfReader(str(stored_path))
-    text_parts = []
-    for page in reader.pages:
-      text_parts.append(page.extract_text() or "")
-    text = "\n".join(text_parts)
-  except Exception:
-    return jsonify({"status": "error", "message": "Unable to read PDF file."}), 400
-  rows, headers, error = parse_pdf_table(text)
-  if error:
-    return jsonify({"status": "error", "message": error}), 400
-
-  total = 0
-  scored = 0
-  errors = 0
-  label_counts = {"Fraud": 0, "Review": 0, "Normal": 0}
-  results = []
-  for index, row in enumerate(rows, start=1):
-    total += 1
-    cleaned, errs = validate_features(row)
-    if errs:
-      errors += 1
-      results.append({"row": index, "errors": errs})
-      continue
-    prediction = MODEL.predict(cleaned)
-    scored += 1
-    if prediction.label in label_counts:
-      label_counts[prediction.label] += 1
-    results.append(
-      {
-        "row": index,
-        "label": prediction.label,
-        "probability": prediction.probability,
-        "reasons": prediction.reasons,
-      }
-    )
-    if total >= 1000:
-      break
-  samples = [r for r in results if "label" in r][:5]
-  summary = {
-    "total": total,
-    "scored": scored,
-    "errors": errors,
-    "label_counts": label_counts,
-  }
-  with get_db() as conn:
-    conn.execute(
-      """
-      INSERT INTO upload_history (user_id, filename, stored_path, summary)
-      VALUES (?, ?, ?, ?)
-      """,
-      (current_user_id(), original_name, str(stored_path), json.dumps(summary)),
-    )
-  return jsonify(
-    {
-      "status": "ok",
-      "summary": summary,
-      "samples": samples,
-      "fields": headers,
-    }
-  )
+  return jsonify({"status": "error", "message": "PDF upload is disabled in this deployment."}), 400
 if __name__ == "__main__":
   app.run(host="0.0.0.0", port=5000, debug=True)

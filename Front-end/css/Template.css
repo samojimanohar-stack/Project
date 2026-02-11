@@ -797,7 +797,7 @@ body {
 }
 
 .admin-row-role {
-  grid-template-columns: 1.2fr 1.2fr 0.6fr 0.7fr 0.8fr auto;
+  grid-template-columns: 1.1fr 1.2fr 0.6fr 0.7fr 0.7fr 0.8fr auto;
 }
 
 .admin-row-click {
@@ -850,6 +850,30 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.admin-health,
+.admin-log {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-health-card,
+.admin-log-item {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(9, 15, 26, 0.7);
+  border: 1px solid rgba(70, 140, 255, 0.18);
+  box-shadow: 0 12px 26px rgba(6, 10, 18, 0.35);
+  color: #e7eefc;
+  font-size: 13px;
+}
+
+.admin-health-card .muted,
+.admin-log-item .muted {
+  color: rgba(214, 226, 248, 0.7);
+  font-size: 12px;
 }
 
 .status-pill {
