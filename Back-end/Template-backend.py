@@ -23,13 +23,15 @@ PAGES_DIR = FRONT_DIR / "pages"
 CSS_DIR = FRONT_DIR / "css"
 JS_DIR = FRONT_DIR / "js"
 IMG_DIR = FRONT_DIR / "image"
-DB_PATH = BASE_DIR / "db" / "Template-db.db"
+# Allow overriding database location in deployment environments.
+DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "db" / "Template-db.db")))
 UPLOAD_DIR = BASE_DIR / "uploads"
 MODEL, MODEL_SOURCE = load_model()
 app = Flask(__name__, static_folder=None)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 app.permanent_session_lifetime = timedelta(minutes=30)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 TEST_MODE = os.getenv("TEST_MODE", "").lower() in {"1", "true", "yes"}
 
 
@@ -130,6 +132,35 @@ def init_db() -> None:
     )
 
 
+def bootstrap_admin_user() -> None:
+  """
+  Ensure the configured admin account exists and is active.
+  This helps deployments where seed data is empty or reset.
+  """
+  if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+    return
+  password_hash = generate_password_hash(ADMIN_PASSWORD)
+  with get_db() as conn:
+    row = conn.execute("SELECT id FROM users WHERE email = ?", (ADMIN_EMAIL,)).fetchone()
+    if row:
+      conn.execute(
+        """
+        UPDATE users
+        SET password_hash = ?, role = 'admin', active = 1, email_verified = 1
+        WHERE email = ?
+        """,
+        (password_hash, ADMIN_EMAIL),
+      )
+    else:
+      conn.execute(
+        """
+        INSERT INTO users (name, email, password_hash, role, active, email_verified)
+        VALUES (?, ?, ?, 'admin', 1, 1)
+        """,
+        ("Admin", ADMIN_EMAIL, password_hash),
+      )
+
+
 _db_initialized = False
 
 
@@ -139,6 +170,7 @@ def _startup() -> None:
   if _db_initialized:
     return
   init_db()
+  bootstrap_admin_user()
   _db_initialized = True
 
 
@@ -989,19 +1021,27 @@ def api_signup():
   password_hash = generate_password_hash(password)
   verify_token = secrets.token_urlsafe(24)
   verify_expires = (now_utc() + timedelta(hours=24)).isoformat()
+  # If SMTP is not configured (or intentionally disabled), auto-verify
+  # to avoid blocking sign-in on free-tier deployments.
+  auto_verify = not smtp_configured()
+  if auto_verify:
+    verify_token = None
+    verify_expires = None
   try:
     with get_db() as conn:
       count = conn.execute("SELECT COUNT(*) AS total FROM users").fetchone()["total"]
       role = "admin" if count == 0 else "analyst"
       conn.execute(
         """
-        INSERT INTO users (name, email, password_hash, role, verify_token, verify_expires)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (name, email, password_hash, role, verify_token, verify_expires, email_verified)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, email, password_hash, role, verify_token, verify_expires),
+        (name, email, password_hash, role, verify_token, verify_expires, 1 if auto_verify else 0),
       )
   except sqlite3.IntegrityError:
     return jsonify({"status": "error", "message": "Email already registered."}), 400
+  if auto_verify:
+    return jsonify({"status": "ok", "message": "Account created. You can sign in now."})
   verify_url = absolute_url(f"/verify?token={verify_token}")
   email_sent = send_email(
     email,
@@ -1092,6 +1132,11 @@ def api_request_password_reset():
   email = str(payload.get("email", "")).strip().lower()
   if not email:
     return jsonify({"status": "error", "message": "Email required."}), 400
+  with get_db() as conn:
+    row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+  # Keep a generic success response to avoid leaking account existence.
+  if not row:
+    return jsonify({"status": "ok", "message": "Password reset link sent."})
   reset_token = secrets.token_urlsafe(24)
   reset_expires = (now_utc() + timedelta(hours=2)).isoformat()
   with get_db() as conn:

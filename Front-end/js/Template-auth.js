@@ -8,12 +8,37 @@ const setStatus = (id, message) => {
 
 const initCsrf = async () => {
   try {
-    const res = await fetch("/api/csrf");
+    const res = await fetch("/api/csrf", { credentials: "include" });
     const data = await res.json();
     if (res.ok) csrfToken = data.token;
   } catch (err) {
     csrfToken = "";
   }
+};
+
+const postWithCsrf = async (url, payload) => {
+  if (!csrfToken) await initCsrf();
+  let res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify(payload),
+  });
+  // Retry once when CSRF/session rotated on server restart.
+  if (res.status === 403) {
+    const maybeJson = await res.clone().json().catch(() => null);
+    if (maybeJson && String(maybeJson.message || "").toLowerCase().includes("csrf")) {
+      csrfToken = "";
+      await initCsrf();
+      res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(payload),
+      });
+    }
+  }
+  return res;
 };
 
 const showResendForm = (message) => {
@@ -52,12 +77,7 @@ const handleSignup = () => {
     }
     setStatus("signup-status", "Creating account...");
     try {
-      if (!csrfToken) await initCsrf();
-      const res = await fetch("/api/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        body: JSON.stringify(payload),
-      });
+      const res = await postWithCsrf("/api/signup", payload);
       const data = await res.json();
       if (!res.ok) {
         setStatus("signup-status", data.message || "Signup failed.");
@@ -86,12 +106,7 @@ const handleLogin = () => {
     const payload = Object.fromEntries(new FormData(form).entries());
     setStatus("login-status", "Signing in...");
     try {
-      if (!csrfToken) await initCsrf();
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        body: JSON.stringify(payload),
-      });
+      const res = await postWithCsrf("/api/login", payload);
       const data = await res.json();
       if (!res.ok) {
         setStatus("login-status", data.message || "Invalid credentials.");
@@ -112,12 +127,7 @@ const handleForgot = () => {
     const payload = Object.fromEntries(new FormData(form).entries());
     setStatus("forgot-status", "Sending reset link...");
     try {
-      if (!csrfToken) await initCsrf();
-      const res = await fetch("/api/request-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        body: JSON.stringify(payload),
-      });
+      const res = await postWithCsrf("/api/request-password-reset", payload);
       const data = await res.json();
       if (!res.ok) {
         setStatus("forgot-status", data.message || "Request failed.");
@@ -164,12 +174,7 @@ const handleReset = () => {
     payload.token = token;
     setStatus("reset-status", "Updating password...");
     try {
-      if (!csrfToken) await initCsrf();
-      const res = await fetch("/api/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        body: JSON.stringify(payload),
-      });
+      const res = await postWithCsrf("/api/reset-password", payload);
       const data = await res.json();
       if (!res.ok) {
         const message = data.message || "Reset failed.";
@@ -210,12 +215,7 @@ const handleResend = () => {
     const payload = Object.fromEntries(new FormData(form).entries());
     setStatus("reset-resend-status", "Sending reset link...");
     try {
-      if (!csrfToken) await initCsrf();
-      const res = await fetch("/api/request-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        body: JSON.stringify(payload),
-      });
+      const res = await postWithCsrf("/api/request-password-reset", payload);
       const data = await res.json();
       if (!res.ok) {
         setStatus("reset-resend-status", data.message || "Request failed.");
