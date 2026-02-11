@@ -90,7 +90,10 @@ const handleSignup = () => {
         );
         return;
       }
-      setStatus("signup-status", "Account created. Verify your email.");
+      setStatus("signup-status", data.message || "Account created. Redirecting to sign in...");
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 800);
     } catch (err) {
       setStatus("signup-status", "Signup failed. Try again.");
     }
@@ -185,7 +188,8 @@ const handleReset = () => {
         return;
       }
       showResetSuccess("Password updated. Redirecting to sign in...");
-      window.location.replace("/login");
+      const redirectTo = data.redirect_to || "/login";
+      window.location.replace(redirectTo);
     } catch (err) {
       setStatus("reset-status", "Reset failed. Try again.");
     }

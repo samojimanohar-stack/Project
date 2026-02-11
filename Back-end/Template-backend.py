@@ -15,7 +15,14 @@ from flask import Flask, jsonify, redirect, request, send_from_directory, sessio
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
-from app.model import load_model, validate_features
+from app.model import (
+  BOOLEAN_FIELDS,
+  CATEGORICAL_FIELDS,
+  NUMERIC_FIELDS,
+  REQUIRED_FIELDS,
+  load_model,
+  validate_features,
+)
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / "config" / ".env")
 FRONT_DIR = BASE_DIR.parent / "Front-end"
@@ -33,6 +40,8 @@ app.permanent_session_lifetime = timedelta(minutes=30)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 TEST_MODE = os.getenv("TEST_MODE", "").lower() in {"1", "true", "yes"}
+DEFAULT_FRAUD_THRESHOLD = float(os.getenv("FRAUD_THRESHOLD", "0.70"))
+DEFAULT_REVIEW_THRESHOLD = float(os.getenv("REVIEW_THRESHOLD", "0.50"))
 
 
 def get_db() -> sqlite3.Connection:
@@ -130,6 +139,15 @@ def init_db() -> None:
       )
       """
     )
+    conn.execute(
+      """
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+      """
+    )
 
 
 def bootstrap_admin_user() -> None:
@@ -189,10 +207,11 @@ def get_user_role(user_id: int) -> str | None:
 
 
 def require_admin(user_id: int) -> bool:
+  # Strict mode: admin access is tied to the configured ADMIN_EMAIL only.
+  if not ADMIN_EMAIL:
+    return False
   if get_user_role(user_id) != "admin":
     return False
-  if not ADMIN_EMAIL:
-    return True
   with get_db() as conn:
     row = conn.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()
   return bool(row) and row["email"].lower() == ADMIN_EMAIL
@@ -250,10 +269,8 @@ def password_policy(password: str) -> list[str]:
 def smtp_configured() -> bool:
   if os.getenv("SMTP_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
     return False
-  return all(
-    os.getenv(key)
-    for key in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM")
-  )
+  # SMTP_FROM is optional; when omitted we fallback to SMTP_USER.
+  return all(os.getenv(key) for key in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"))
 
 
 def send_email(to_address: str, subject: str, body: str) -> bool:
@@ -261,7 +278,7 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
     return False
   msg = EmailMessage()
   msg["Subject"] = subject
-  msg["From"] = os.getenv("SMTP_FROM")
+  msg["From"] = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER")
   msg["To"] = to_address
   msg.set_content(body)
   host = os.getenv("SMTP_HOST")
@@ -269,19 +286,138 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
   user = os.getenv("SMTP_USER")
   password = os.getenv("SMTP_PASS")
   timeout = float(os.getenv("SMTP_TIMEOUT", "5"))
+  use_ssl = os.getenv("SMTP_USE_SSL", "").strip().lower() in {"1", "true", "yes"}
+  use_starttls = os.getenv("SMTP_USE_STARTTLS", "1").strip().lower() in {"1", "true", "yes"}
   try:
-    with smtplib.SMTP(host, port, timeout=timeout) as smtp:
-      smtp.starttls()
+    if use_ssl or port == 465:
+      smtp_client = smtplib.SMTP_SSL(host, port, timeout=timeout)
+    else:
+      smtp_client = smtplib.SMTP(host, port, timeout=timeout)
+    with smtp_client as smtp:
+      if use_starttls and not use_ssl and port != 465:
+        smtp.starttls()
       smtp.login(user, password)
       smtp.send_message(msg)
     return True
-  except Exception:
+  except Exception as exc:
+    # Print concise SMTP error for platform logs (Render/PythonAnywhere).
+    print(f"[smtp] send failed: {exc}")
     return False
 
 
 def absolute_url(path: str) -> str:
-  base = request.host_url.rstrip("/")
+  configured_base = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
+  if configured_base:
+    base = configured_base
+  else:
+    proto = request.headers.get("X-Forwarded-Proto", request.scheme)
+    host = request.headers.get("X-Forwarded-Host", request.host)
+    base = f"{proto}://{host}".rstrip("/")
   return f"{base}{path}"
+
+
+def _parse_float(value: Any, default: float) -> float:
+  try:
+    return float(value)
+  except (TypeError, ValueError):
+    return default
+
+
+def get_setting(key: str, default: str | None = None) -> str | None:
+  with get_db() as conn:
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+  if row:
+    return row["value"]
+  return default
+
+
+def set_setting(key: str, value: Any) -> None:
+  with get_db() as conn:
+    conn.execute(
+      """
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = datetime('now')
+      """,
+      (key, str(value)),
+    )
+
+
+def get_thresholds() -> tuple[float, float]:
+  fraud = _parse_float(get_setting("fraud_threshold", str(DEFAULT_FRAUD_THRESHOLD)), DEFAULT_FRAUD_THRESHOLD)
+  review = _parse_float(get_setting("review_threshold", str(DEFAULT_REVIEW_THRESHOLD)), DEFAULT_REVIEW_THRESHOLD)
+  fraud = min(max(fraud, 0.05), 0.99)
+  review = min(max(review, 0.01), fraud - 0.01)
+  return fraud, review
+
+
+def label_by_threshold(probability: float) -> str:
+  fraud_threshold, review_threshold = get_thresholds()
+  if probability >= fraud_threshold:
+    return "Fraud"
+  if probability >= review_threshold:
+    return "Review"
+  return "Normal"
+
+
+def build_top_features(cleaned: Dict[str, Any], reasons: list[str]) -> list[Dict[str, Any]]:
+  top: list[Dict[str, Any]] = []
+  for reason in reasons[:5]:
+    m = re.match(r"^(?P<feature>[^:]+):\s*(?P<value>.*?)\s*\((?P<meta>[^)]*)\)\s*$", str(reason))
+    if m:
+      top.append(
+        {
+          "feature": m.group("feature").strip(),
+          "value": m.group("value").strip(),
+          "detail": m.group("meta").strip(),
+        }
+      )
+    else:
+      top.append({"feature": "signal", "value": "", "detail": str(reason)})
+  if top:
+    return top[:3]
+
+  risk_candidates = [
+    "amount",
+    "country_risk_score",
+    "merchant_risk_score",
+    "device_risk_score",
+    "ip_reputation_score",
+    "transactions_last_1h",
+    "historical_fraud_count",
+  ]
+  scored = []
+  for key in risk_candidates:
+    if key not in cleaned:
+      continue
+    try:
+      scored.append((key, float(cleaned.get(key, 0))))
+    except Exception:
+      continue
+  for key, value in sorted(scored, key=lambda item: abs(item[1]), reverse=True)[:3]:
+    top.append({"feature": key, "value": value, "detail": "high influence candidate"})
+  return top
+
+
+def csv_schema_report(fieldnames: list[str] | None) -> Dict[str, Any]:
+  normalized_fields = [normalize_header(h) for h in (fieldnames or []) if h]
+  required = sorted(REQUIRED_FIELDS.keys())
+  expected = set(REQUIRED_FIELDS.keys()) | set(NUMERIC_FIELDS.keys()) | set(BOOLEAN_FIELDS) | set(CATEGORICAL_FIELDS)
+  missing_required = [name for name in required if name not in normalized_fields]
+  unknown = [name for name in normalized_fields if name not in expected and name != "label"]
+  recognized = [name for name in normalized_fields if name in expected]
+  coverage = round((len(set(recognized)) / max(len(expected), 1)) * 100, 2)
+  return {
+    "required_fields": required,
+    "missing_required": missing_required,
+    "recognized_feature_count": len(set(recognized)),
+    "expected_feature_count": len(expected),
+    "coverage_percent": coverage,
+    "unknown_fields": unknown[:20],
+    "file_fields": normalized_fields,
+  }
 
 
 def normalize_header(name: str) -> str:
@@ -843,6 +979,51 @@ def api_test_email():
   return jsonify({"status": "ok", "message": "Test email sent."})
 
 
+@app.get("/api/admin/model-settings")
+def api_admin_model_settings():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  fraud_threshold, review_threshold = get_thresholds()
+  return jsonify(
+    {
+      "status": "ok",
+      "settings": {
+        "fraud_threshold": fraud_threshold,
+        "review_threshold": review_threshold,
+      },
+    }
+  )
+
+
+@app.post("/api/admin/model-settings")
+def api_admin_model_settings_save():
+  user_id = current_user_id()
+  if not user_id:
+    return jsonify({"status": "error", "message": "Authentication required."}), 401
+  if not require_admin(user_id):
+    return jsonify({"status": "error", "message": "Admin role required."}), 403
+  payload: Dict[str, Any] = request.get_json(silent=True) or {}
+  fraud_threshold = _parse_float(payload.get("fraud_threshold"), DEFAULT_FRAUD_THRESHOLD)
+  review_threshold = _parse_float(payload.get("review_threshold"), DEFAULT_REVIEW_THRESHOLD)
+  if not (0.05 <= fraud_threshold <= 0.99):
+    return jsonify({"status": "error", "message": "fraud_threshold must be between 0.05 and 0.99."}), 400
+  if not (0.01 <= review_threshold < fraud_threshold):
+    return jsonify({"status": "error", "message": "review_threshold must be >= 0.01 and lower than fraud_threshold."}), 400
+  set_setting("fraud_threshold", f"{fraud_threshold:.4f}")
+  set_setting("review_threshold", f"{review_threshold:.4f}")
+  log_audit(user_id, "model_settings_update", None, f"fraud={fraud_threshold:.4f},review={review_threshold:.4f}")
+  return jsonify(
+    {
+      "status": "ok",
+      "message": "Model thresholds updated.",
+      "settings": {"fraud_threshold": fraud_threshold, "review_threshold": review_threshold},
+    }
+  )
+
+
 def normalize_label(value: str) -> str:
   val = str(value or "").strip().lower()
   if val in {"fraud", "1", "true", "yes"}:
@@ -869,8 +1050,17 @@ def api_evaluate_csv():
   except Exception:
     return jsonify({"status": "error", "message": "Unable to read CSV file."}), 400
   reader = csv.DictReader(io.StringIO(content))
+  schema = csv_schema_report(reader.fieldnames or [])
   if not reader.fieldnames or "label" not in [normalize_header(h) for h in reader.fieldnames]:
     return jsonify({"status": "error", "message": "CSV must include a 'label' column."}), 400
+  if schema["missing_required"]:
+    return jsonify(
+      {
+        "status": "error",
+        "message": f"CSV missing required feature columns: {', '.join(schema['missing_required'])}",
+        "schema": schema,
+      }
+    ), 400
 
   total = 0
   correct = 0
@@ -882,7 +1072,8 @@ def api_evaluate_csv():
     cleaned, errs = validate_features(row)
     if errs:
       continue
-    pred = MODEL.predict(cleaned).label
+    pred_obj = MODEL.predict(cleaned)
+    pred = label_by_threshold(pred_obj.probability)
     pred_label = normalize_label(pred)
     if pred_label == true_label:
       correct += 1
@@ -929,7 +1120,7 @@ def api_evaluate_csv():
     )
   log_audit(user_id, "model_evaluation", None, f"file={file.filename}")
 
-  return jsonify({"status": "ok", **metrics})
+  return jsonify({"status": "ok", **metrics, "schema": schema})
 
 
 @app.get("/api/admin/evaluations")
@@ -1029,8 +1220,7 @@ def api_signup():
     verify_expires = None
   try:
     with get_db() as conn:
-      count = conn.execute("SELECT COUNT(*) AS total FROM users").fetchone()["total"]
-      role = "admin" if count == 0 else "analyst"
+      role = "admin" if ADMIN_EMAIL and email == ADMIN_EMAIL else "analyst"
       conn.execute(
         """
         INSERT INTO users (name, email, password_hash, role, verify_token, verify_expires, email_verified)
@@ -1178,7 +1368,7 @@ def api_reset_password():
       "UPDATE users SET password_hash = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?",
       (generate_password_hash(password), row["id"]),
     )
-  return jsonify({"status": "ok", "message": "Password updated."})
+  return jsonify({"status": "ok", "message": "Password updated.", "redirect_to": "/login"})
 @app.post("/api/predict")
 def api_predict():
   if not current_user_id():
@@ -1188,12 +1378,16 @@ def api_predict():
   if errors:
     return jsonify({"status": "error", "message": ", ".join(errors)}), 400
   prediction = MODEL.predict(cleaned)
+  top_features = build_top_features(cleaned, prediction.reasons)
+  fraud_threshold, review_threshold = get_thresholds()
   return jsonify(
     {
       "status": "ok",
       "probability": prediction.probability,
-      "label": prediction.label,
+      "label": label_by_threshold(prediction.probability),
       "reasons": prediction.reasons,
+      "top_features": top_features,
+      "thresholds": {"fraud": fraud_threshold, "review": review_threshold},
       "model": MODEL_SOURCE,
     }
   )
@@ -1220,11 +1414,21 @@ def api_upload_csv():
   except Exception:
     return jsonify({"status": "error", "message": "Unable to read CSV file."}), 400
   reader = csv.DictReader(io.StringIO(content))
+  schema = csv_schema_report(reader.fieldnames or [])
+  if schema["missing_required"]:
+    return jsonify(
+      {
+        "status": "error",
+        "message": f"CSV missing required feature columns: {', '.join(schema['missing_required'])}",
+        "schema": schema,
+      }
+    ), 400
   total = 0
   scored = 0
   errors = 0
   label_counts = {"Fraud": 0, "Review": 0, "Normal": 0}
   results = []
+  fraud_threshold, review_threshold = get_thresholds()
   for index, row in enumerate(reader, start=1):
     total += 1
     cleaned, errs = validate_features(row)
@@ -1233,15 +1437,18 @@ def api_upload_csv():
       results.append({"row": index, "errors": errs})
       continue
     prediction = MODEL.predict(cleaned)
+    final_label = label_by_threshold(prediction.probability)
+    top_features = build_top_features(cleaned, prediction.reasons)
     scored += 1
-    if prediction.label in label_counts:
-      label_counts[prediction.label] += 1
+    if final_label in label_counts:
+      label_counts[final_label] += 1
     results.append(
       {
         "row": index,
-        "label": prediction.label,
+        "label": final_label,
         "probability": prediction.probability,
         "reasons": prediction.reasons,
+        "top_features": top_features,
       }
     )
     if total >= 1000:
@@ -1252,6 +1459,7 @@ def api_upload_csv():
     "scored": scored,
     "errors": errors,
     "label_counts": label_counts,
+    "schema_coverage_percent": schema["coverage_percent"],
   }
   with get_db() as conn:
     conn.execute(
@@ -1267,6 +1475,8 @@ def api_upload_csv():
       "summary": summary,
       "samples": samples,
       "fields": reader.fieldnames or [],
+      "schema": schema,
+      "thresholds": {"fraud": fraud_threshold, "review": review_threshold},
     }
   )
 
