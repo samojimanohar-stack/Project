@@ -96,6 +96,69 @@ const loadHealth = async () => {
   }
 };
 
+const loadModelSettings = async () => {
+  const status = byId("model-settings-status");
+  const fraudInput = byId("fraud-threshold");
+  const reviewInput = byId("review-threshold");
+  if (!status || !fraudInput || !reviewInput) return;
+  status.textContent = "Loading settings...";
+  try {
+    const res = await fetch("/api/admin/model-settings");
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = data.message || "Unable to load settings.";
+      return;
+    }
+    const settings = data.settings || {};
+    fraudInput.value = settings.fraud_threshold ?? 0.7;
+    reviewInput.value = settings.review_threshold ?? 0.5;
+    status.textContent = "Settings loaded.";
+  } catch (err) {
+    status.textContent = "Unable to load settings.";
+  }
+};
+
+const initModelSettings = () => {
+  const form = byId("model-settings-form");
+  const status = byId("model-settings-status");
+  const fraudInput = byId("fraud-threshold");
+  const reviewInput = byId("review-threshold");
+  if (!form || !status || !fraudInput || !reviewInput) return;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fraud = Number(fraudInput.value);
+    const review = Number(reviewInput.value);
+    if (!(fraud >= 0.05 && fraud <= 0.99)) {
+      status.textContent = "Fraud threshold must be between 0.05 and 0.99.";
+      return;
+    }
+    if (!(review >= 0.01 && review < fraud)) {
+      status.textContent = "Review threshold must be >= 0.01 and lower than fraud threshold.";
+      return;
+    }
+    status.textContent = "Saving settings...";
+    try {
+      if (!csrfToken) await initCsrf();
+      const res = await fetch("/api/admin/model-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ fraud_threshold: fraud, review_threshold: review }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.textContent = data.message || "Unable to save settings.";
+        return;
+      }
+      status.textContent = "Thresholds saved.";
+      await loadModelSettings();
+      await loadAudit();
+    } catch (err) {
+      status.textContent = "Unable to save settings.";
+    }
+  });
+};
+
 const loadAudit = async () => {
   const log = byId("admin-log");
   const status = byId("admin-log-status");
@@ -214,7 +277,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initCsrf();
   loadUsers();
   loadHealth();
+  loadModelSettings();
   loadAudit();
+  initModelSettings();
   initEvaluation();
   loadEvaluationHistory();
 });

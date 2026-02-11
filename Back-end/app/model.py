@@ -16,6 +16,15 @@ try:
 except ImportError:  # pragma: no cover
   shap = None
 REQUIRED_FIELDS = {"amount": float}
+AMOUNT_ALIASES = {
+  "amount",
+  "present_transaction",
+  "present_transaction_amount",
+  "transaction_amount",
+  "payment_amount",
+  "total_amount",
+  "value",
+}
 
 NUMERIC_FIELDS = {
   "amount": float,
@@ -118,13 +127,29 @@ class Prediction:
 def validate_features(raw: Dict) -> Tuple[Dict, List[str]]:
   cleaned: Dict = {}
   errors: List[str] = []
+  raw_lookup = {str(k).strip().lower(): v for k, v in raw.items()}
+
+  def pick_value(*names: str):
+    for name in names:
+      if name in raw_lookup and raw_lookup.get(name) not in (None, ""):
+        return raw_lookup.get(name)
+    return None
 
   for key, expected in REQUIRED_FIELDS.items():
-    if key not in raw or raw.get(key) in (None, ""):
-      errors.append(f"Missing {key}")
-      continue
-
-    value = raw.get(key)
+    if key == "amount":
+      # Accept common aliases and fallback to safe numeric defaults
+      # so single-field name mismatch does not block the flow.
+      value = pick_value(*AMOUNT_ALIASES)
+      if value in (None, ""):
+        value = pick_value("amount_last_24h", "average_transaction_amount")
+      if value in (None, ""):
+        cleaned["amount"] = 0.0
+        continue
+    else:
+      if key not in raw or raw.get(key) in (None, ""):
+        errors.append(f"Missing {key}")
+        continue
+      value = raw.get(key)
     try:
       if expected is float:
         cleaned[key] = float(value)
@@ -136,7 +161,11 @@ def validate_features(raw: Dict) -> Tuple[Dict, List[str]]:
       errors.append(f"Invalid {key}")
 
   for key, expected in NUMERIC_FIELDS.items():
+    if key == "amount" and cleaned.get("amount") not in (None, ""):
+      continue
     value = raw.get(key)
+    if value in (None, "") and key == "amount":
+      value = pick_value(*AMOUNT_ALIASES)
     if value in (None, ""):
       continue
     try:

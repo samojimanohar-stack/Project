@@ -38,6 +38,22 @@
         <div class="admin-health" id="admin-health">Checking...</div>
       </section>
       <section class="panel">
+        <h2>Model thresholds</h2>
+        <p class="helper">Adjust how probability maps to Fraud/Review/Normal labels.</p>
+        <form class="form" id="model-settings-form">
+          <label class="field">
+            Fraud threshold
+            <input type="number" id="fraud-threshold" min="0.05" max="0.99" step="0.01" required />
+          </label>
+          <label class="field">
+            Review threshold
+            <input type="number" id="review-threshold" min="0.01" max="0.98" step="0.01" required />
+          </label>
+          <button class="btn btn-primary" type="submit">Save thresholds</button>
+        </form>
+        <p class="helper" id="model-settings-status">Loading settings...</p>
+      </section>
+      <section class="panel">
         <h2>Audit log</h2>
         <p class="helper">Recent admin actions.</p>
         <div class="admin-log" id="admin-log"></div>

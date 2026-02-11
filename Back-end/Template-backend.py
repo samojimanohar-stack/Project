@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import smtplib
+import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 import re
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 from app.model import (
+  AMOUNT_ALIASES,
   BOOLEAN_FIELDS,
   CATEGORICAL_FIELDS,
   NUMERIC_FIELDS,
@@ -25,6 +27,34 @@ from app.model import (
 )
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / "config" / ".env")
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+  raw = os.getenv(name)
+  if raw is None:
+    return default
+  return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int) -> int:
+  raw = os.getenv(name)
+  if raw is None or str(raw).strip() == "":
+    return default
+  try:
+    return int(str(raw).strip())
+  except (TypeError, ValueError):
+    return default
+
+
+def env_float(name: str, default: float) -> float:
+  raw = os.getenv(name)
+  if raw is None or str(raw).strip() == "":
+    return default
+  try:
+    return float(str(raw).strip())
+  except (TypeError, ValueError):
+    return default
+
 FRONT_DIR = BASE_DIR.parent / "Front-end"
 PAGES_DIR = FRONT_DIR / "pages"
 CSS_DIR = FRONT_DIR / "css"
@@ -36,12 +66,23 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 MODEL, MODEL_SOURCE = load_model()
 app = Flask(__name__, static_folder=None)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
-app.permanent_session_lifetime = timedelta(minutes=30)
+SESSION_DAYS = env_int("SESSION_DAYS", 14)
+app.permanent_session_lifetime = timedelta(days=max(1, SESSION_DAYS))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", True)
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
-TEST_MODE = os.getenv("TEST_MODE", "").lower() in {"1", "true", "yes"}
-DEFAULT_FRAUD_THRESHOLD = float(os.getenv("FRAUD_THRESHOLD", "0.70"))
-DEFAULT_REVIEW_THRESHOLD = float(os.getenv("REVIEW_THRESHOLD", "0.50"))
+TEST_MODE = env_bool("TEST_MODE", False)
+DEFAULT_FRAUD_THRESHOLD = env_float("FRAUD_THRESHOLD", 0.70)
+DEFAULT_REVIEW_THRESHOLD = env_float("REVIEW_THRESHOLD", 0.50)
+RATE_LIMIT_WINDOW_SEC = env_int("RATE_LIMIT_WINDOW_SEC", 600)
+RATE_LIMIT_LOGIN = env_int("RATE_LIMIT_LOGIN", 20)
+RATE_LIMIT_SIGNUP = env_int("RATE_LIMIT_SIGNUP", 10)
+RATE_LIMIT_RESET = env_int("RATE_LIMIT_RESET", 8)
+RATE_LIMIT_VERIFY = env_int("RATE_LIMIT_VERIFY", 8)
+RATE_BUCKETS: dict[str, list[float]] = {}
 
 
 def get_db() -> sqlite3.Connection:
@@ -192,6 +233,13 @@ def _startup() -> None:
   _db_initialized = True
 
 
+@app.before_request
+def _persist_user_session() -> None:
+  # Keep authenticated sessions persistent across refresh/close.
+  if session.get("user_id"):
+    session.permanent = True
+
+
 def now_utc() -> datetime:
   return datetime.utcnow()
 
@@ -282,12 +330,12 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
   msg["To"] = to_address
   msg.set_content(body)
   host = os.getenv("SMTP_HOST")
-  port = int(os.getenv("SMTP_PORT", "587"))
+  port = env_int("SMTP_PORT", 587)
   user = os.getenv("SMTP_USER")
   password = os.getenv("SMTP_PASS")
-  timeout = float(os.getenv("SMTP_TIMEOUT", "5"))
-  use_ssl = os.getenv("SMTP_USE_SSL", "").strip().lower() in {"1", "true", "yes"}
-  use_starttls = os.getenv("SMTP_USE_STARTTLS", "1").strip().lower() in {"1", "true", "yes"}
+  timeout = env_float("SMTP_TIMEOUT", 5.0)
+  use_ssl = env_bool("SMTP_USE_SSL", False)
+  use_starttls = env_bool("SMTP_USE_STARTTLS", True)
   try:
     if use_ssl or port == 465:
       smtp_client = smtplib.SMTP_SSL(host, port, timeout=timeout)
@@ -314,6 +362,43 @@ def absolute_url(path: str) -> str:
     host = request.headers.get("X-Forwarded-Host", request.host)
     base = f"{proto}://{host}".rstrip("/")
   return f"{base}{path}"
+
+
+def client_ip() -> str:
+  xff = request.headers.get("X-Forwarded-For", "")
+  if xff:
+    return xff.split(",")[0].strip()
+  return request.remote_addr or "unknown"
+
+
+def is_rate_limited(action: str, limit: int, window_sec: int = RATE_LIMIT_WINDOW_SEC) -> tuple[bool, int]:
+  if limit <= 0:
+    return False, 0
+  now = time.time()
+  key = f"{action}:{client_ip()}"
+  events = RATE_BUCKETS.get(key, [])
+  cutoff = now - window_sec
+  events = [ts for ts in events if ts >= cutoff]
+  if len(events) >= limit:
+    retry_after = max(1, int(window_sec - (now - events[0])))
+    RATE_BUCKETS[key] = events
+    return True, retry_after
+  events.append(now)
+  RATE_BUCKETS[key] = events
+  return False, 0
+
+
+def rate_limit_response(action: str, retry_after: int):
+  response = jsonify(
+    {
+      "status": "error",
+      "message": f"Too many {action} attempts. Please try again later.",
+      "retry_after": retry_after,
+    }
+  )
+  response.status_code = 429
+  response.headers["Retry-After"] = str(retry_after)
+  return response
 
 
 def _parse_float(value: Any, default: float) -> float:
@@ -363,49 +448,93 @@ def label_by_threshold(probability: float) -> str:
 
 
 def build_top_features(cleaned: Dict[str, Any], reasons: list[str]) -> list[Dict[str, Any]]:
-  top: list[Dict[str, Any]] = []
-  for reason in reasons[:5]:
+  # Relative impact priors used when multiple parameters are present.
+  impact_weights = {
+    "amount": 1.00,
+    "transactions_last_1h": 0.95,
+    "historical_fraud_count": 0.90,
+    "country_risk_score": 0.85,
+    "merchant_risk_score": 0.82,
+    "device_risk_score": 0.80,
+    "ip_reputation_score": 0.78,
+    "amount_last_24h": 0.74,
+    "transactions_last_24h": 0.70,
+    "blacklist_match_flag": 0.88,
+    "proxy_vpn_flag": 0.64,
+    "new_device_for_user": 0.62,
+    "new_location_for_user": 0.62,
+    "country_mismatch": 0.60,
+    "billing_shipping_mismatch": 0.58,
+  }
+
+  reason_by_feature: Dict[str, str] = {}
+  for reason in reasons[:8]:
     m = re.match(r"^(?P<feature>[^:]+):\s*(?P<value>.*?)\s*\((?P<meta>[^)]*)\)\s*$", str(reason))
     if m:
+      reason_by_feature[m.group("feature").strip()] = m.group("meta").strip()
+
+  present = {k: v for k, v in cleaned.items() if v not in (None, "", [], {})}
+
+  # Rule 1: when only one parameter is available, focus on that parameter.
+  if len(present) == 1:
+    key = next(iter(present.keys()))
+    return [
+      {
+        "feature": key,
+        "value": present[key],
+        "detail": reason_by_feature.get(key, "single available parameter"),
+      }
+    ]
+
+  # Rule 2: when multiple parameters are available, rank by estimated impact.
+  if len(present) > 1:
+    ranked: list[tuple[float, str, Any]] = []
+    for key, value in present.items():
+      base_weight = impact_weights.get(key, 0.35)
+      try:
+        magnitude = abs(float(value))
+      except Exception:
+        magnitude = 1.0
+      score = base_weight * (1.0 + min(magnitude, 10.0) / 10.0)
+      ranked.append((score, key, value))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    top = []
+    for _, key, value in ranked[:3]:
       top.append(
         {
-          "feature": m.group("feature").strip(),
-          "value": m.group("value").strip(),
-          "detail": m.group("meta").strip(),
+          "feature": key,
+          "value": value,
+          "detail": reason_by_feature.get(key, "highest impact among provided parameters"),
         }
       )
-    else:
-      top.append({"feature": "signal", "value": "", "detail": str(reason)})
-  if top:
-    return top[:3]
+    return top
 
-  risk_candidates = [
-    "amount",
-    "country_risk_score",
-    "merchant_risk_score",
-    "device_risk_score",
-    "ip_reputation_score",
-    "transactions_last_1h",
-    "historical_fraud_count",
-  ]
-  scored = []
-  for key in risk_candidates:
-    if key not in cleaned:
-      continue
-    try:
-      scored.append((key, float(cleaned.get(key, 0))))
-    except Exception:
-      continue
-  for key, value in sorted(scored, key=lambda item: abs(item[1]), reverse=True)[:3]:
-    top.append({"feature": key, "value": value, "detail": "high influence candidate"})
-  return top
+  # Rule 3: if no usable parameters, fallback to transaction-money signals.
+  fallback_order = ["amount", "transactions_last_1h", "amount_last_24h", "transactions_last_24h"]
+  fallback = []
+  for key in fallback_order:
+    value = cleaned.get(key, 0)
+    fallback.append(
+      {
+        "feature": key,
+        "value": value,
+        "detail": "transaction-money fallback",
+      }
+    )
+  return fallback[:3]
 
 
 def csv_schema_report(fieldnames: list[str] | None) -> Dict[str, Any]:
   normalized_fields = [normalize_header(h) for h in (fieldnames or []) if h]
   required = sorted(REQUIRED_FIELDS.keys())
   expected = set(REQUIRED_FIELDS.keys()) | set(NUMERIC_FIELDS.keys()) | set(BOOLEAN_FIELDS) | set(CATEGORICAL_FIELDS)
-  missing_required = [name for name in required if name not in normalized_fields]
+  missing_required = []
+  for name in required:
+    if name == "amount":
+      if not any(alias in normalized_fields for alias in AMOUNT_ALIASES):
+        missing_required.append(name)
+    elif name not in normalized_fields:
+      missing_required.append(name)
   unknown = [name for name in normalized_fields if name not in expected and name != "label"]
   recognized = [name for name in normalized_fields if name in expected]
   coverage = round((len(set(recognized)) / max(len(expected), 1)) * 100, 2)
@@ -432,7 +561,7 @@ def parse_pdf_table(text: str) -> tuple[list[Dict[str, str]], list[str], str | N
   def parse_delimited(header_line: str, delimiter: str, data_lines: list[str]):
     headers = [h.strip().strip('"') for h in header_line.split(delimiter)]
     normalized = [normalize_header(h) for h in headers]
-    if "amount" not in normalized:
+    if not any(alias in normalized for alias in AMOUNT_ALIASES):
       return None
     csv_text = "\n".join([delimiter.join(headers)] + data_lines)
     reader = csv.DictReader(io.StringIO(csv_text), delimiter=delimiter)
@@ -445,7 +574,7 @@ def parse_pdf_table(text: str) -> tuple[list[Dict[str, str]], list[str], str | N
   def parse_fixed_width(header_line: str, data_lines: list[str]):
     headers = [h.strip().strip('"') for h in re.split(r"\s{2,}", header_line)]
     normalized = [normalize_header(h) for h in headers]
-    if "amount" not in normalized:
+    if not any(alias in normalized for alias in AMOUNT_ALIASES):
       return None
     rows: list[Dict[str, str]] = []
     for row_line in data_lines:
@@ -485,6 +614,8 @@ def parse_pdf_table(text: str) -> tuple[list[Dict[str, str]], list[str], str | N
   return [], [], "PDF upload is disabled in this deployment."
 @app.get("/")
 def index():
+  if current_user_id():
+    return redirect("/dashboard")
   return send_from_directory(PAGES_DIR, "Template-index.html")
 @app.get("/signup")
 def signup():
@@ -1197,6 +1328,9 @@ def api_admin_evaluation_download(eval_id: int):
   )
 @app.post("/api/signup")
 def api_signup():
+  blocked, retry_after = is_rate_limited("signup", RATE_LIMIT_SIGNUP)
+  if blocked:
+    return rate_limit_response("signup", retry_after)
   payload: Dict[str, Any] = request.get_json(silent=True) or {}
   name = str(payload.get("name", "")).strip()
   email = str(payload.get("email", "")).strip().lower()
@@ -1244,6 +1378,9 @@ def api_signup():
   return jsonify(payload)
 @app.post("/api/login")
 def api_login():
+  blocked, retry_after = is_rate_limited("login", RATE_LIMIT_LOGIN)
+  if blocked:
+    return rate_limit_response("login", retry_after)
   payload: Dict[str, Any] = request.get_json(silent=True) or {}
   email = str(payload.get("email", "")).strip().lower()
   password = str(payload.get("password", "")).strip()
@@ -1251,7 +1388,7 @@ def api_login():
     return jsonify({"status": "error", "message": "Email and password required."}), 400
   with get_db() as conn:
     row = conn.execute(
-      "SELECT id, password_hash, email_verified, active, login_count FROM users WHERE email = ?",
+      "SELECT id, password_hash, email_verified, active, login_count, role FROM users WHERE email = ?",
       (email,),
     ).fetchone()
   if not row or not check_password_hash(row["password_hash"], password):
@@ -1272,9 +1409,20 @@ def api_login():
     )
   session["user_id"] = row["id"]
   session.permanent = True
-  return jsonify({"status": "ok", "message": "Signed in"})
+  is_admin = require_admin(row["id"])
+  return jsonify(
+    {
+      "status": "ok",
+      "message": "Signed in",
+      "role": row["role"],
+      "is_admin": is_admin,
+    }
+  )
 @app.post("/api/request-verify")
 def api_request_verify():
+  blocked, retry_after = is_rate_limited("verify", RATE_LIMIT_VERIFY)
+  if blocked:
+    return rate_limit_response("verification", retry_after)
   payload: Dict[str, Any] = request.get_json(silent=True) or {}
   email = str(payload.get("email", "")).strip().lower()
   if not email:
@@ -1318,6 +1466,9 @@ def verify():
   return redirect("/verify-status?status=success")
 @app.post("/api/request-password-reset")
 def api_request_password_reset():
+  blocked, retry_after = is_rate_limited("password_reset", RATE_LIMIT_RESET)
+  if blocked:
+    return rate_limit_response("password reset", retry_after)
   payload: Dict[str, Any] = request.get_json(silent=True) or {}
   email = str(payload.get("email", "")).strip().lower()
   if not email:

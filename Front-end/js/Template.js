@@ -185,6 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshHistory();
   updateVisuals();
   initVizControls();
+  hydrateAdminLink();
 });
 
 const updateVisuals = (summary = null, samples = [], fields = []) => {
@@ -477,26 +478,38 @@ const drawLine = (svg, values) => {
   const max = Math.max(...values, 100);
   const min = Math.min(...values, 0);
   const gridLines = 4;
+  const axisLeft = padding + 8;
+  const axisRight = width - padding;
+  const axisTop = padding + 6;
+  const axisBottom = height - padding;
+
   for (let i = 0; i <= gridLines; i += 1) {
-    const y = padding + (i / gridLines) * (height - padding * 2);
+    const y = axisTop + (i / gridLines) * (axisBottom - axisTop);
     const line = document.createElementNS(ns, "line");
-    line.setAttribute("x1", padding.toString());
-    line.setAttribute("x2", (width - padding).toString());
+    line.setAttribute("x1", axisLeft.toString());
+    line.setAttribute("x2", axisRight.toString());
     line.setAttribute("y1", y.toString());
     line.setAttribute("y2", y.toString());
     line.setAttribute("stroke", "var(--viz-grid)");
     line.setAttribute("stroke-width", "1");
     svg.appendChild(line);
+
+    const yLabel = document.createElementNS(ns, "text");
+    yLabel.setAttribute("x", (axisLeft - 3).toString());
+    yLabel.setAttribute("y", (y + 2).toString());
+    yLabel.setAttribute("text-anchor", "end");
+    yLabel.setAttribute("font-size", "6");
+    yLabel.setAttribute("fill", "rgba(210,224,246,0.55)");
+    yLabel.textContent = `${Math.round(max - (i / gridLines) * (max - min))}`;
+    svg.appendChild(yLabel);
   }
 
   const fraudLevel = 70;
   const fraudY =
-    height -
-    padding -
-    ((fraudLevel - min) / (max - min || 1)) * (height - padding * 2);
+    axisBottom - ((fraudLevel - min) / (max - min || 1)) * (axisBottom - axisTop);
   const fraudLine = document.createElementNS(ns, "line");
-  fraudLine.setAttribute("x1", padding.toString());
-  fraudLine.setAttribute("x2", (width - padding).toString());
+  fraudLine.setAttribute("x1", axisLeft.toString());
+  fraudLine.setAttribute("x2", axisRight.toString());
   fraudLine.setAttribute("y1", fraudY.toFixed(1));
   fraudLine.setAttribute("y2", fraudY.toFixed(1));
   fraudLine.setAttribute("stroke", "var(--viz-alert)");
@@ -505,7 +518,7 @@ const drawLine = (svg, values) => {
   svg.appendChild(fraudLine);
 
   const fraudLabel = document.createElementNS(ns, "text");
-  fraudLabel.setAttribute("x", (width - padding).toString());
+  fraudLabel.setAttribute("x", axisRight.toString());
   fraudLabel.setAttribute("y", (fraudY - 2).toFixed(1));
   fraudLabel.setAttribute("text-anchor", "end");
   fraudLabel.setAttribute("fill", "var(--viz-alert)");
@@ -513,9 +526,9 @@ const drawLine = (svg, values) => {
   fraudLabel.textContent = "70%";
   svg.appendChild(fraudLabel);
   const points = values.map((val, idx) => {
-    const x = padding + (idx / (values.length - 1 || 1)) * (width - padding * 2);
+    const x = axisLeft + (idx / (values.length - 1 || 1)) * (axisRight - axisLeft);
     const normalized = (val - min) / (max - min || 1);
-    const y = height - padding - normalized * (height - padding * 2);
+    const y = axisBottom - normalized * (axisBottom - axisTop);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
 
@@ -538,9 +551,9 @@ const drawLine = (svg, values) => {
   svg.appendChild(polyline);
 
   values.forEach((val, idx) => {
-    const x = padding + (idx / (values.length - 1 || 1)) * (width - padding * 2);
+    const x = axisLeft + (idx / (values.length - 1 || 1)) * (axisRight - axisLeft);
     const normalized = (val - min) / (max - min || 1);
-    const y = height - padding - normalized * (height - padding * 2);
+    const y = axisBottom - normalized * (axisBottom - axisTop);
     const circle = document.createElementNS(ns, "circle");
     circle.setAttribute("cx", x.toFixed(1));
     circle.setAttribute("cy", y.toFixed(1));
@@ -561,29 +574,70 @@ const drawHistogram = (svg, values) => {
   const max = Math.max(...counts, 1);
   const width = 200;
   const height = 120;
-  const barWidth = width / counts.length - 6;
+  const baseY = height - 8;
+  const leftPad = 12;
+  const gap = 5;
+  const barWidth = (width - leftPad * 2 - gap * (counts.length - 1)) / counts.length;
+  const depth = 6;
   const fraudThreshold = 70;
-  const fraudY = height - 6 - (fraudThreshold / 100) * (height - 20);
+  const fraudY = baseY - (fraudThreshold / 100) * (height - 24);
   const fraudLine = document.createElementNS(ns, "line");
-  fraudLine.setAttribute("x1", "6");
-  fraudLine.setAttribute("x2", (width - 6).toString());
+  fraudLine.setAttribute("x1", leftPad.toString());
+  fraudLine.setAttribute("x2", (width - leftPad).toString());
   fraudLine.setAttribute("y1", fraudY.toFixed(1));
   fraudLine.setAttribute("y2", fraudY.toFixed(1));
   fraudLine.setAttribute("stroke", "var(--viz-alert)");
   fraudLine.setAttribute("stroke-width", "2");
   fraudLine.setAttribute("stroke-dasharray", "4 4");
   svg.appendChild(fraudLine);
+
+  const plane = document.createElementNS(ns, "polygon");
+  plane.setAttribute(
+    "points",
+    `${leftPad},${baseY} ${width - leftPad},${baseY} ${width - leftPad + depth},${baseY - depth} ${leftPad + depth},${baseY - depth}`
+  );
+  plane.setAttribute("fill", "rgba(160,190,230,0.10)");
+  svg.appendChild(plane);
+
   counts.forEach((count, idx) => {
-    const barHeight = (count / max) * (height - 20);
+    const barHeight = (count / max) * (height - 26);
+    const x = leftPad + idx * (barWidth + gap);
+    const y = baseY - barHeight;
     const rect = document.createElementNS(ns, "rect");
-    rect.setAttribute("x", (idx * (barWidth + 6) + 4).toString());
-    rect.setAttribute("y", (height - barHeight - 6).toString());
+    rect.setAttribute("x", x.toString());
+    rect.setAttribute("y", y.toString());
     rect.setAttribute("width", barWidth.toString());
     rect.setAttribute("height", barHeight.toString());
-    rect.setAttribute("rx", "6");
+    rect.setAttribute("rx", "3");
     const isHigh = idx >= 3;
-    rect.setAttribute("fill", isHigh ? "var(--viz-alert)" : "var(--viz-line)");
+    const front = isHigh ? "rgba(255,122,89,0.92)" : "rgba(89,194,255,0.9)";
+    rect.setAttribute("fill", front);
     svg.appendChild(rect);
+
+    const side = document.createElementNS(ns, "polygon");
+    side.setAttribute(
+      "points",
+      `${x + barWidth},${y} ${x + barWidth + depth},${y - depth} ${x + barWidth + depth},${baseY - depth} ${x + barWidth},${baseY}`
+    );
+    side.setAttribute("fill", isHigh ? "rgba(142,63,44,0.8)" : "rgba(34,86,138,0.76)");
+    svg.appendChild(side);
+
+    const top = document.createElementNS(ns, "polygon");
+    top.setAttribute(
+      "points",
+      `${x},${y} ${x + barWidth},${y} ${x + barWidth + depth},${y - depth} ${x + depth},${y - depth}`
+    );
+    top.setAttribute("fill", isHigh ? "rgba(255,172,150,0.76)" : "rgba(163,220,255,0.68)");
+    svg.appendChild(top);
+
+    const xLabel = document.createElementNS(ns, "text");
+    xLabel.setAttribute("x", (x + barWidth / 2).toFixed(1));
+    xLabel.setAttribute("y", (baseY + 8).toString());
+    xLabel.setAttribute("text-anchor", "middle");
+    xLabel.setAttribute("font-size", "6");
+    xLabel.setAttribute("fill", "rgba(210,224,246,0.55)");
+    xLabel.textContent = `${bins[idx]}-${bins[idx + 1]}`;
+    svg.appendChild(xLabel);
   });
 };
 
@@ -605,7 +659,8 @@ const drawPie = (svg, values) => {
   ];
   const cx = 100;
   const cy = 60;
-  const r = 42;
+  const r = 38;
+  const thickness = 8;
   let start = -Math.PI / 2;
 
   base.forEach((val, idx) => {
@@ -626,15 +681,42 @@ const drawPie = (svg, values) => {
     path.setAttribute("d", d);
     path.setAttribute("fill", colors[idx]);
     svg.appendChild(path);
+
+    const depthPath = document.createElementNS(ns, "path");
+    const dDepth = [
+      `M ${cx} ${cy + thickness}`,
+      `L ${x1} ${y1 + thickness}`,
+      `A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2 + thickness}`,
+      "Z",
+    ].join(" ");
+    depthPath.setAttribute("d", dDepth);
+    depthPath.setAttribute("fill", "rgba(5,10,18,0.45)");
+    svg.appendChild(depthPath);
     start = end;
   });
 
-  const ring = document.createElementNS(ns, "circle");
-  ring.setAttribute("cx", cx.toString());
-  ring.setAttribute("cy", cy.toString());
-  ring.setAttribute("r", "20");
-  ring.setAttribute("fill", "rgba(10, 15, 24, 0.9)");
-  svg.appendChild(ring);
+  const ringOuter = document.createElementNS(ns, "circle");
+  ringOuter.setAttribute("cx", cx.toString());
+  ringOuter.setAttribute("cy", cy.toString());
+  ringOuter.setAttribute("r", "19");
+  ringOuter.setAttribute("fill", "rgba(10, 15, 24, 0.9)");
+  svg.appendChild(ringOuter);
+
+  const ringInner = document.createElementNS(ns, "circle");
+  ringInner.setAttribute("cx", cx.toString());
+  ringInner.setAttribute("cy", cy.toString());
+  ringInner.setAttribute("r", "14");
+  ringInner.setAttribute("fill", "rgba(22, 34, 58, 0.95)");
+  svg.appendChild(ringInner);
+
+  const scoreText = document.createElementNS(ns, "text");
+  scoreText.setAttribute("x", cx.toString());
+  scoreText.setAttribute("y", (cy + 2).toString());
+  scoreText.setAttribute("text-anchor", "middle");
+  scoreText.setAttribute("font-size", "7");
+  scoreText.setAttribute("fill", "rgba(230,240,255,0.9)");
+  scoreText.textContent = `${Math.round((base[1] / total) * 100)}% err`;
+  svg.appendChild(scoreText);
 };
 
 

@@ -1,9 +1,36 @@
 const byId = (id) => document.getElementById(id);
 let csrfToken = "";
+const LAST_EMAIL_KEY = "mfd_last_email";
 
 const setStatus = (id, message) => {
   const el = byId(id);
   if (el) el.textContent = message;
+};
+
+const saveLastEmail = (email) => {
+  const value = String(email || "").trim().toLowerCase();
+  if (!value) return;
+  try {
+    localStorage.setItem(LAST_EMAIL_KEY, value);
+  } catch (err) {
+    // Ignore storage errors in restricted/private contexts.
+  }
+};
+
+const restoreLastEmail = () => {
+  let value = "";
+  try {
+    value = localStorage.getItem(LAST_EMAIL_KEY) || "";
+  } catch (err) {
+    value = "";
+  }
+  if (!value) return;
+  const loginEmail = document.querySelector("#login-form input[name='email']");
+  const signupEmail = document.querySelector("#signup-form input[name='email']");
+  const forgotEmail = document.querySelector("#forgot-form input[name='email']");
+  if (loginEmail && !loginEmail.value) loginEmail.value = value;
+  if (signupEmail && !signupEmail.value) signupEmail.value = value;
+  if (forgotEmail && !forgotEmail.value) forgotEmail.value = value;
 };
 
 const initCsrf = async () => {
@@ -76,6 +103,7 @@ const handleSignup = () => {
       return;
     }
     setStatus("signup-status", "Creating account...");
+    saveLastEmail(payload.email);
     try {
       const res = await postWithCsrf("/api/signup", payload);
       const data = await res.json();
@@ -108,6 +136,7 @@ const handleLogin = () => {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(form).entries());
     setStatus("login-status", "Signing in...");
+    saveLastEmail(payload.email);
     try {
       const res = await postWithCsrf("/api/login", payload);
       const data = await res.json();
@@ -115,7 +144,11 @@ const handleLogin = () => {
         setStatus("login-status", data.message || "Invalid credentials.");
         return;
       }
-      window.location.href = "/dashboard";
+      if (data.is_admin) {
+        window.location.href = "/admin";
+      } else {
+        window.location.href = "/dashboard";
+      }
     } catch (err) {
       setStatus("login-status", "Login failed. Try again.");
     }
@@ -129,6 +162,7 @@ const handleForgot = () => {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(form).entries());
     setStatus("forgot-status", "Sending reset link...");
+    saveLastEmail(payload.email);
     try {
       const res = await postWithCsrf("/api/request-password-reset", payload);
       const data = await res.json();
@@ -242,6 +276,7 @@ const handleResend = () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   initCsrf();
+  restoreLastEmail();
   handleSignup();
   handleLogin();
   handleForgot();
